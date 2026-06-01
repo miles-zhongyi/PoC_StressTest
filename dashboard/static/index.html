@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>5G RU Digital Twin — Live Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #0c0f14;
+      --card: #151a22;
+      --border: #2a3140;
+      --text: #e8eaed;
+      --muted: #8b93a7;
+      --accent: #4d9fff;
+      --ok: #3dd68c;
+      --warn: #e5a84b;
+      --err: #f07178;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.45;
+      padding: 1.25rem 1.5rem 2rem;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 1.25rem;
+      flex-wrap: wrap;
+    }
+    h1 { font-size: 1.15rem; font-weight: 600; letter-spacing: -0.02em; }
+    .sub { font-size: 0.8rem; color: var(--muted); }
+    .live {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+    .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--muted);
+    }
+    .dot.ok { background: var(--ok); }
+    .dot.err { background: var(--err); }
+    .banner {
+      display: none;
+      background: #2a1a1a;
+      border: 1px solid var(--err);
+      color: var(--err);
+      padding: 0.6rem 0.85rem;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      margin-bottom: 1rem;
+    }
+    .banner.show { display: block; }
+    .kpis {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+    .kpi {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.85rem 1rem;
+    }
+    .kpi label {
+      display: block;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+      margin-bottom: 0.25rem;
+    }
+    .kpi .val {
+      font-size: 1.65rem;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+    .kpi .val.warn { color: var(--warn); }
+    .kpi .val.err { color: var(--err); }
+    .kpi .val.ok { color: var(--ok); }
+    .kpi .hint { font-size: 0.72rem; color: var(--muted); margin-top: 0.15rem; }
+    .prb-bar-wrap {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem;
+      margin-bottom: 1rem;
+    }
+    .prb-bar-wrap h2 { font-size: 0.8rem; font-weight: 600; margin-bottom: 0.6rem; color: var(--muted); }
+    .prb-track {
+      height: 28px;
+      background: #0a0d11;
+      border-radius: 4px;
+      overflow: hidden;
+      display: flex;
+    }
+    .prb-used {
+      background: var(--accent);
+      transition: width 0.4s ease;
+      min-width: 0;
+    }
+    .prb-used.high { background: var(--warn); }
+    .prb-used.full { background: var(--err); }
+    .prb-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-top: 0.4rem;
+      font-variant-numeric: tabular-nums;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+    @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } }
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem;
+    }
+    .panel h2 {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--muted);
+      margin-bottom: 0.75rem;
+    }
+    .chart-box { position: relative; height: 220px; }
+    .chart-box.tall { height: 260px; }
+    footer {
+      margin-top: 1.25rem;
+      font-size: 0.7rem;
+      color: var(--muted);
+      text-align: center;
+    }
+    .control {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem 1.1rem;
+      margin-bottom: 1rem;
+    }
+    .control-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      margin-bottom: 0.75rem;
+      flex-wrap: wrap;
+    }
+    .control h2 { font-size: 0.8rem; font-weight: 600; color: var(--muted); }
+    .control-status { font-size: 0.75rem; color: var(--muted); }
+    .control-status.ok { color: var(--ok); }
+    .control-status.err { color: var(--err); }
+    .control-row {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+    .control-row input[type="range"] {
+      flex: 1;
+      min-width: 160px;
+      accent-color: var(--accent);
+    }
+    .control-row input[type="number"] {
+      width: 5.5rem;
+      padding: 0.4rem 0.5rem;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: #0a0d11;
+      color: var(--text);
+      font-size: 0.9rem;
+      font-variant-numeric: tabular-nums;
+    }
+    .presets { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+    .presets button, .btn-apply {
+      padding: 0.4rem 0.7rem;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: #0a0d11;
+      color: var(--text);
+      font-size: 0.78rem;
+      cursor: pointer;
+    }
+    .presets button:hover, .btn-apply:hover { border-color: var(--accent); }
+    .btn-apply {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #0c0f14;
+      font-weight: 600;
+    }
+    .btn-apply:disabled { opacity: 0.5; cursor: not-allowed; }
+    .cell-row { margin-bottom: 0.9rem; }
+    .cell-row:last-child { margin-bottom: 0; }
+    .cell-row-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-size: 0.78rem;
+      margin-bottom: 0.3rem;
+    }
+    .cell-row-head .name { font-weight: 600; }
+    .cell-row-head .name .swatch {
+      display: inline-block;
+      width: 9px; height: 9px;
+      border-radius: 2px;
+      margin-right: 0.45rem;
+    }
+    .cell-row-head .meta { color: var(--muted); font-variant-numeric: tabular-nums; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>5G RU Digital Twin</h1>
+      <p class="sub">Cell capacity &amp; UE load — live from DU + simulator</p>
+    </div>
+    <div class="live">
+      <span class="dot" id="liveDot"></span>
+      <span id="liveText">Connecting…</span>
+    </div>
+  </header>
+
+  <div class="banner" id="errorBanner"></div>
+
+  <section class="control">
+    <div class="control-head">
+      <h2>Simulated UEs</h2>
+      <span class="control-status" id="controlStatus">Adjust load, then Apply</span>
+    </div>
+    <div class="control-row">
+      <input type="range" id="ueSlider" min="0" max="5000" value="1" step="1" />
+      <input type="number" id="ueCount" min="0" max="5000" value="1" step="1" />
+      <button type="button" class="btn-apply" id="ueApply">Apply</button>
+    </div>
+    <div class="control-row" style="margin-top:0.65rem">
+      <span class="sub">Presets:</span>
+      <div class="presets">
+        <button type="button" data-ues="1">1</button>
+        <button type="button" data-ues="50">50</button>
+        <button type="button" data-ues="500">500</button>
+        <button type="button" data-ues="2000">2000</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="kpis" id="kpiRow"></section>
+
+  <section class="prb-bar-wrap">
+    <h2>PRB allocation per cell</h2>
+    <div id="prbBars"></div>
+  </section>
+
+  <div class="grid">
+    <section class="panel">
+      <h2>PRB utilization over time (per cell)</h2>
+      <div class="chart-box tall"><canvas id="tsChart"></canvas></div>
+    </section>
+    <section class="panel">
+      <h2>PRB split by cell (current)</h2>
+      <div class="chart-box"><canvas id="prbDonut"></canvas></div>
+    </section>
+    <section class="panel">
+      <h2>DU session counters (cluster total)</h2>
+      <div class="chart-box"><canvas id="duBar"></canvas></div>
+    </section>
+    <section class="panel">
+      <h2>UE simulator (cumulative)</h2>
+      <div class="chart-box"><canvas id="ueBar"></canvas></div>
+    </section>
+  </div>
+
+  <footer>Polls /api/metrics every 1s · per-cell PRB pools + UE attach / handover outcomes</footer>
+
+  <script>
+    const MAX_POINTS = 120;
+    const CELL_COLORS = ["#4d9fff", "#c77dff", "#3dd68c", "#e5a84b", "#56c2d6", "#f07178"];
+    const FREE_COLOR = "#2a3140";
+    const cellColor = (i) => CELL_COLORS[i % CELL_COLORS.length];
+
+    // per-cell PRB-utilization history keyed by cell_id, plus cluster connected UEs
+    const history = { labels: [], byCell: {}, connected: [] };
+    let tsCellIds = [];
+
+    const chartDefaults = {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: "#8b93a7", boxWidth: 12, font: { size: 11 } } },
+      },
+      scales: {
+        x: { ticks: { color: "#8b93a7", maxTicksLimit: 8, font: { size: 10 } }, grid: { color: "#2a3140" } },
+        y: { ticks: { color: "#8b93a7", font: { size: 10 } }, grid: { color: "#2a3140" }, beginAtZero: true },
+      },
+    };
+
+    const tsChart = new Chart(document.getElementById("tsChart"), {
+      type: "line",
+      data: { labels: [], datasets: [] },
+      options: {
+        ...chartDefaults,
+        plugins: { legend: { labels: { color: "#8b93a7", boxWidth: 12, font: { size: 11 } } } },
+        scales: {
+          x: chartDefaults.scales.x,
+          y: { ...chartDefaults.scales.y, position: "left", max: 100, title: { display: true, text: "PRB utilization (%)", color: "#8b93a7", font: { size: 10 } } },
+          y1: { ...chartDefaults.scales.y, position: "right", title: { display: true, text: "Connected UEs", color: "#8b93a7", font: { size: 10 } }, grid: { drawOnChartArea: false } },
+        },
+      },
+    });
+
+    // (Re)build the time-series datasets when the set of cells changes.
+    function ensureSeries(cellIds) {
+      const same = cellIds.length === tsCellIds.length && cellIds.every((c, i) => c === tsCellIds[i]);
+      if (same) return;
+      tsCellIds = cellIds.slice();
+      const cellDatasets = cellIds.map((id, i) => ({
+        label: `${id} PRB %`,
+        data: (history.byCell[id] || []).slice(),
+        borderColor: cellColor(i),
+        backgroundColor: "transparent",
+        tension: 0.25,
+        yAxisID: "y",
+      }));
+      tsChart.data.datasets = [
+        ...cellDatasets,
+        { label: "Connected UEs (cluster)", data: history.connected.slice(),
+          borderColor: "#8b93a7", borderDash: [4, 3], tension: 0.25, yAxisID: "y1" },
+      ];
+    }
+
+    const prbDonut = new Chart(document.getElementById("prbDonut"), {
+      type: "doughnut",
+      data: {
+        labels: ["Free"],
+        datasets: [{ data: [273], backgroundColor: [FREE_COLOR], borderWidth: 0 }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { position: "bottom", labels: { color: "#8b93a7" } } },
+      },
+    });
+
+    const duBar = new Chart(document.getElementById("duBar"), {
+      type: "bar",
+      data: {
+        labels: ["Admitted", "Rejected", "Released"],
+        datasets: [{ label: "Count", data: [0, 0, 0], backgroundColor: ["#3dd68c", "#e5a84b", "#8b93a7"] }],
+      },
+      options: { ...chartDefaults, plugins: { legend: { display: false } } },
+    });
+
+    const ueBar = new Chart(document.getElementById("ueBar"), {
+      type: "bar",
+      data: {
+        labels: ["Admitted", "Rejected", "Dropped", "Handovers", "HO fail", "Conn errors"],
+        datasets: [{ label: "Count", data: [0, 0, 0, 0, 0, 0], backgroundColor: ["#3dd68c", "#e5a84b", "#f07178", "#4d9fff", "#c77dff", "#f07178"] }],
+      },
+      options: { ...chartDefaults, plugins: { legend: { display: false } } },
+    });
+
+    function fmtTime(ts) {
+      const d = new Date(ts * 1000);
+      return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    }
+
+    function aggregate(cells) {
+      return cells.reduce((a, c) => ({
+        total_prbs: a.total_prbs + c.total_prbs,
+        used_prbs: a.used_prbs + c.used_prbs,
+        free_prbs: a.free_prbs + c.free_prbs,
+        connected_ues: a.connected_ues + c.connected_ues,
+        admitted: a.admitted + c.admitted_total,
+        rejected: a.rejected + c.rejected_total,
+        released: a.released + c.released_total,
+      }), { total_prbs: 0, used_prbs: 0, free_prbs: 0, connected_ues: 0, admitted: 0, rejected: 0, released: 0 });
+    }
+
+    function renderKpis(agg, ue) {
+      const util = agg.total_prbs ? agg.used_prbs / agg.total_prbs : 0;
+      const utilPct = (util * 100).toFixed(1);
+      const rejectRate = agg.admitted + agg.rejected > 0
+        ? (100 * agg.rejected / (agg.admitted + agg.rejected)).toFixed(1)
+        : "0.0";
+      const items = [
+        { label: "Cluster PRB util", val: utilPct + "%", cls: util > 0.9 ? "err" : util > 0.7 ? "warn" : "ok", hint: `${agg.used_prbs} / ${agg.total_prbs} PRBs` },
+        { label: "Connected UEs", val: agg.connected_ues, cls: "", hint: `Across ${ue.num_rus ?? "—"} cells` },
+        { label: "Target UEs", val: ue.num_ues_configured, cls: "", hint: `${ue.num_ues_running ?? "—"} UE tasks running` },
+        { label: "Handovers", val: ue.handovers ?? 0, cls: "ok", hint: `${ue.ho_fail ?? 0} failed (target full)` },
+        { label: "Admission reject", val: rejectRate + "%", cls: parseFloat(rejectRate) > 20 ? "warn" : "", hint: `${agg.rejected} rejected (DU)` },
+        { label: "Connection errors", val: ue.conn_err, cls: ue.conn_err > 0 ? "err" : "ok", hint: "Failed to reach RU" },
+      ];
+      document.getElementById("kpiRow").innerHTML = items.map((k) => `
+        <div class="kpi">
+          <label>${k.label}</label>
+          <div class="val ${k.cls}">${k.val}</div>
+          <div class="hint">${k.hint}</div>
+        </div>`).join("");
+    }
+
+    function renderPrbBars(cells) {
+      document.getElementById("prbBars").innerHTML = cells.map((c, i) => {
+        const pct = c.utilization * 100;
+        const cls = pct >= 99 ? "full" : pct >= 80 ? "high" : "";
+        const bg = cls ? "" : `background:${cellColor(i)};`;
+        return `
+          <div class="cell-row">
+            <div class="cell-row-head">
+              <span class="name"><span class="swatch" style="background:${cellColor(i)}"></span>${c.cell_id}</span>
+              <span class="meta">${c.used_prbs}/${c.total_prbs} PRB · ${pct.toFixed(1)}% · ${c.connected_ues} UEs</span>
+            </div>
+            <div class="prb-track"><div class="prb-used ${cls}" style="width:${pct}%;${bg}"></div></div>
+          </div>`;
+      }).join("");
+    }
+
+    function pushHistory(ts, cells, totalConnected) {
+      history.labels.push(fmtTime(ts));
+      const n = history.labels.length;
+      cells.forEach((c) => {
+        if (!history.byCell[c.cell_id]) {
+          history.byCell[c.cell_id] = new Array(n - 1).fill(null);  // backfill late-joining cell
+        }
+        history.byCell[c.cell_id].push(+(c.utilization * 100).toFixed(1));
+      });
+      history.connected.push(totalConnected);
+      if (history.labels.length > MAX_POINTS) {
+        history.labels.shift();
+        history.connected.shift();
+        Object.values(history.byCell).forEach((arr) => arr.shift());
+      }
+      tsChart.data.labels = history.labels;
+      tsCellIds.forEach((id, i) => {
+        if (tsChart.data.datasets[i]) tsChart.data.datasets[i].data = history.byCell[id];
+      });
+      const connDs = tsChart.data.datasets[tsChart.data.datasets.length - 1];
+      if (connDs) connDs.data = history.connected;
+      tsChart.update("none");
+    }
+
+    const ueSlider = document.getElementById("ueSlider");
+    const ueCount = document.getElementById("ueCount");
+    const ueApply = document.getElementById("ueApply");
+    const controlStatus = document.getElementById("controlStatus");
+    let controlEditing = false;
+
+    ueSlider.addEventListener("input", () => {
+      controlEditing = true;
+      ueCount.value = ueSlider.value;
+    });
+    ueCount.addEventListener("input", () => {
+      controlEditing = true;
+      ueSlider.value = ueCount.value;
+    });
+    ueCount.addEventListener("blur", () => { controlEditing = false; });
+    ueCount.addEventListener("focus", () => { controlEditing = true; });
+
+    document.querySelectorAll(".presets button").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const n = btn.dataset.ues;
+        ueSlider.value = n;
+        ueCount.value = n;
+        controlEditing = true;
+      });
+    });
+
+    function syncControlFromMetrics(ue) {
+      const max = ue.num_ues_max || 5000;
+      ueSlider.max = max;
+      ueCount.max = max;
+      if (!controlEditing) {
+        ueSlider.value = ue.num_ues_configured;
+        ueCount.value = ue.num_ues_configured;
+      }
+    }
+
+    async function applyUeTarget() {
+      const n = parseInt(ueCount.value, 10);
+      const max = parseInt(ueCount.max, 10) || 5000;
+      if (Number.isNaN(n) || n < 0 || n > max) {
+        controlStatus.textContent = `Enter 0–${max}`;
+        controlStatus.className = "control-status err";
+        return;
+      }
+      ueApply.disabled = true;
+      controlStatus.textContent = "Applying…";
+      controlStatus.className = "control-status";
+      try {
+        const r = await fetch("/api/ues", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ num_ues: n }),
+        });
+        const data = await r.json();
+        if (!r.ok || !data.ok) {
+          throw new Error(data.error || `HTTP ${r.status}`);
+        }
+        controlEditing = false;
+        ueSlider.value = data.num_ues_configured;
+        ueCount.value = data.num_ues_configured;
+        controlStatus.textContent = data.changed
+          ? `Set to ${data.num_ues_configured} UEs (${data.num_ues_running} tasks)`
+          : `Already at ${data.num_ues_configured} UEs`;
+        controlStatus.className = "control-status ok";
+      } catch (e) {
+        controlStatus.textContent = String(e);
+        controlStatus.className = "control-status err";
+      } finally {
+        ueApply.disabled = false;
+      }
+    }
+
+    ueApply.addEventListener("click", applyUeTarget);
+    ueCount.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") applyUeTarget();
+    });
+
+    function update(payload) {
+      const dot = document.getElementById("liveDot");
+      const liveText = document.getElementById("liveText");
+      const banner = document.getElementById("errorBanner");
+
+      if (!payload.ok || !payload.du?.cells?.length) {
+        dot.className = "dot err";
+        liveText.textContent = "Offline";
+        banner.textContent = payload.error || "Waiting for DU / UE metrics…";
+        banner.classList.add("show");
+        return;
+      }
+
+      banner.classList.remove("show");
+      dot.className = "dot ok";
+      liveText.textContent = `Live · ${fmtTime(payload.ts)}`;
+
+      const cells = payload.du.cells;
+      const ue = payload.ue;
+      const agg = aggregate(cells);
+
+      syncControlFromMetrics(ue);
+      renderKpis(agg, ue);
+      renderPrbBars(cells);
+
+      ensureSeries(cells.map((c) => c.cell_id));
+      pushHistory(payload.ts, cells, agg.connected_ues);
+
+      prbDonut.data.labels = [...cells.map((c) => `${c.cell_id} used`), "Free"];
+      prbDonut.data.datasets[0].data = [...cells.map((c) => c.used_prbs), agg.free_prbs];
+      prbDonut.data.datasets[0].backgroundColor = [...cells.map((_, i) => cellColor(i)), FREE_COLOR];
+      prbDonut.update("none");
+
+      duBar.data.datasets[0].data = [agg.admitted, agg.rejected, agg.released];
+      duBar.update("none");
+
+      ueBar.data.datasets[0].data = [ue.admitted, ue.rejected, ue.dropped, ue.handovers ?? 0, ue.ho_fail ?? 0, ue.conn_err];
+      ueBar.update("none");
+    }
+
+    async function poll() {
+      try {
+        const r = await fetch("/api/metrics");
+        update(await r.json());
+      } catch (e) {
+        update({ ok: false, error: String(e) });
+      }
+    }
+
+    poll();
+    setInterval(poll, 1000);
+  </script>
+</body>
+</html>

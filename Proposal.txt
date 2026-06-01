@@ -1,0 +1,33 @@
+Help me implement a task: first, let me give you some context for the project. 5G RU Digital Twin for Network Validation and Operations
+Overview
+We will develop a 5G Radio Unit (RU) digital twin that emulates the behavior of a production RU and connects to live or lab Distributed Unit (DU) and Central Unit (CU) functions over standard 5G interfaces. The digital twin will generate production‑like traffic and RF behavior using historical radio network call traces, Opensignal crowd‑sourced measurements, network events/failures, and social media sentiments as training and scenario input. The goal is to provide a safe, repeatable environment to validate new features, stress‑test the network, and rapidly reproduce and analyze production issues.
+The 5G RU digital twin reduces risk, speeds delivery, and improves operations. It lets teams safely validate software and configuration changes under realistic traffic before deployment, cutting outages and regressions. It provides a reusable sandbox for capacity planning and special events, avoiding costly field trials. It also enables rapid reproduction of production issues with market‑specific data, shortening root‑cause analysis and improving network reliability.
+Data‑driven RU behavior
+The RU digital twin will be trained and driven by multi‑source, real‑world data, including:
+
+RAN call/session traces and performance counters from 5G and LTE networks, including cell‑edge behavior, handovers, and IRAT events.
+Opensignal crowd‑sourced measurements, capturing actual UE service quality at specific location, throughput and latency distributions.
+Network event logs and failure records (e.g., cell outages, degraded sectors, misconfigurations, congestion events).
+Contextual signals such as social media and event calendars, used to model demand surges during special events or incidents.
+This combination allows the RU digital twin to reproduce realistic mobility, interference, and traffic patterns for a specific cluster, market, or event scenario.
+Scenario 1 – Cluster‑level traffic and capacity simulation
+Objective: Emulate a live 5G cluster (5–10 sites) with realistic UE movements, handovers, and RF dynamics for capacity, feature, and software validation.
+Description:
+
+The RU digital twin is instantiated for a cluster of 5–10 RUs, each configured with the same topology, bands, and antenna parameters as the production network.
+Using historical call traces and Opensignal mobility data, the system replays the UE models, RF conditions (RSRP/RSRQ/SINR), and traffic demand patterns across the cluster.
+The twin generates traffic and signaling toward the DU/CU as if thousands of UEs were present, exercising:
+ 
+Intra‑site and inter‑site handovers
+5G–LTE IRAT mobility
+Cell‑edge conditions and interference scenarios
+Time‑of‑day and event‑driven loads Key use cases:
+
+Capacity and load testing: we're starting with the simplest use case, which is to stress test the network, by creating multiple UEs.
+For the proof of concept for this use case.
+I need to Create one container for DU (Distributed Unit) and one for RU (Radiu Unit), on the docker desktop
+Each network has some prb, when the session is established, prb is reserved for the UE
+
+Simulate the UE movement, different power
+Emulates the behavior of UE, sending messages with the RU, establish connections, communicating, and leaving connections.
+First create just one UE, when it works, we can clone it for a variable number of times for stress testing. After that, we'll implment multiple RUs (RU cluster), and implement handover handling when a UE moves from closer to one simulated RU to another.

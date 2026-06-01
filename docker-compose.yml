@@ -1,0 +1,136 @@
+# 5G RU Digital Twin - capacity / load PoC
+#   2-RU cluster (cell-1 @ -600m, cell-2 @ +600m) on a shared DU. UEs roam across
+#   the midline and hand over to the stronger RU (A3 hysteresis, HO_MARGIN_DB).
+#
+#   docker compose up --build                      # 1 UE (NUM_UES=1)
+#   NUM_UES=2000 docker compose up --build         # bash: 2000 UEs in ONE container
+#   $env:NUM_UES=2000; docker compose up --build   # PowerShell (or: .\scripts\run_stress.ps1)
+#   docker compose up --build --scale ue-sim=4     # 4 simulators across cores
+#   curl http://localhost:9080/status              # live cell state (JSON)
+#   (host 9080: container 8080 — avoids Windows reserved port 8080)
+#   open http://localhost:9090                     # metrics dashboard
+#   docker compose logs -f du                       # watch PRB utilisation
+#
+# Scale by raising NUM_UES (UEs are async tasks inside one process), NOT by
+# spinning up thousands of containers. For more than one process can handle,
+# add simulator replicas with --scale ue-sim=N.
+
+services:
+  du:
+    build:
+      context: .
+      dockerfile: du/Dockerfile
+    container_name: du
+    restart: unless-stopped
+    environment:
+      TOTAL_PRBS: "273"        # 100 MHz @ 30 kHz SCS = 273 PRBs per cell
+      SCS_KHZ: "30"
+      MONITOR_INTERVAL: "5"
+    ports:
+      - "9080:8080"   # 9080 on host: 8080 is often in Windows excludedportrange
+    networks: [ran]
+
+  # Two RUs form a small cluster, placed left/right of the origin so UEs roaming
+  # across the midline trigger inter-RU handovers. Each RU is its own cell with
+  # its own PRB pool on the shared DU.
+  ru:
+    build:
+      context: .
+      dockerfile: ru/Dockerfile
+    container_name: ru
+    restart: unless-stopped
+    depends_on: [du]
+    environment:
+      DU_HOST: du
+      DU_PORT: "38472"
+      CELL_ID: cell-1
+      FREQ_GHZ: "3.5"
+      BANDWIDTH_MHZ: "100"
+      TX_POWER_DBM: "49"
+      TX_GAIN_DB: "15"
+      RU_X: "-600"             # cluster geometry: cell-1 sits left of origin
+      RU_Y: "0"
+    ulimits:                   # one socket per UE -> raise the fd limit
+      nofile:
+        soft: 65536
+        hard: 65536
+    networks: [ran]
+
+  ru2:
+    build:
+      context: .
+      dockerfile: ru/Dockerfile
+    container_name: ru2
+    restart: unless-stopped
+    depends_on: [du]
+    environment:
+      DU_HOST: du
+      DU_PORT: "38472"
+      CELL_ID: cell-2
+      FREQ_GHZ: "3.5"
+      BANDWIDTH_MHZ: "100"
+      TX_POWER_DBM: "49"
+      TX_GAIN_DB: "15"
+      RU_X: "600"             # cluster geometry: cell-2 sits right of origin
+      RU_Y: "0"
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    networks: [ran]
+
+  # The whole UE population lives here. Each UE is an async task, not a container.
+  ue-sim:
+    build:
+      context: .
+      dockerfile: ue/Dockerfile
+    restart: unless-stopped
+    depends_on: [ru, ru2]
+    environment:
+      # RU cluster the UEs can see + hand over between (positions must match the
+      # RU_X/RU_Y above so the UE's RSRP estimate matches what the RU computes).
+      RU_LIST: >-
+        [{"name":"cell-1","host":"ru","port":38470,"x":-600,"y":0},
+         {"name":"cell-2","host":"ru2","port":38470,"x":600,"y":0}]
+      HO_MARGIN_DB: "3"         # A3 hysteresis: neighbour must beat serving by 3 dB
+      RU_HOST: ru               # fallback if RU_LIST is unset
+      RU_PORT: "38470"
+      NUM_UES: "${NUM_UES:-1}"  # override: NUM_UES=2000 docker compose up
+      MAX_UES: "5000"           # ceiling for dashboard / POST /control
+      RAMP_SECONDS: "10"        # spread the attaches so they don't all hit at once
+      # per-UE heterogeneity ("different power", demand, mobility)
+      DEMAND_MIN_MBPS: "5"
+      DEMAND_MAX_MBPS: "30"
+      UE_TX_POWERS_DBM: "20,23,26"
+      SPEED_MIN_MPS: "1"
+      SPEED_MAX_MPS: "30"
+      MAX_RADIUS_M: "1300"      # roam wide enough to cross both cells' coverage
+      START_RADIUS_M: "500"
+      SESSION_DURATION: "45"    # 0 = stay connected forever
+      IDLE_BETWEEN: "5"
+      STATS_INTERVAL: "5"
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    networks: [ran]
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: dashboard/Dockerfile
+    container_name: dashboard
+    restart: unless-stopped
+    depends_on: [du, ue-sim]
+    environment:
+      DU_STATUS_URL: http://du:8080/status
+      UE_STATUS_URL: http://ue-sim:8081/status
+      UE_CONTROL_URL: http://ue-sim:8081/control
+      DASHBOARD_PORT: "9090"
+    ports:
+      - "9090:9090"
+    networks: [ran]
+
+networks:
+  ran:
+    driver: bridge
