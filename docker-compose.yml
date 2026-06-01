@@ -26,6 +26,7 @@ services:
       TOTAL_PRBS: "273"        # 100 MHz @ 30 kHz SCS = 273 PRBs per cell
       SCS_KHZ: "30"
       MONITOR_INTERVAL: "5"
+      TRAFFIC_PROFILE: "voip"  # 1–2 PRBs per voice session (see common/rf_model.py)
     ports:
       - "9080:8080"   # 9080 on host: 8080 is often in Windows excludedportrange
     networks: [ran]
@@ -98,9 +99,14 @@ services:
       NUM_UES: "${NUM_UES:-1}"  # override: NUM_UES=2000 docker compose up
       MAX_UES: "5000"           # ceiling for dashboard / POST /control
       RAMP_SECONDS: "10"        # spread the attaches so they don't all hit at once
-      # per-UE heterogeneity ("different power", demand, mobility)
-      DEMAND_MIN_MBPS: "5"
-      DEMAND_MAX_MBPS: "30"
+      TRAFFIC_PROFILE: "voip"   # voip | data (Mbps stress)
+      # VoIP: DU assigns fixed 1–2 PRBs/session (not derived from demand)
+      DEMAND_MIN_MBPS: "0.012"
+      DEMAND_MAX_MBPS: "0.048"
+      # Call-trace replay (after: python scripts/build_trace_index.py)
+      REPLAY_MODE: "${REPLAY_MODE:-0}"          # 1 = replay trace_index timing
+      TRACE_INDEX: "/trace/data/trace_index.jsonl"
+      REPLAY_SPEED: "${REPLAY_SPEED:-10}"        # 10x faster than real time
       UE_TX_POWERS_DBM: "20,23,26"
       SPEED_MIN_MPS: "1"
       SPEED_MAX_MPS: "30"
@@ -109,6 +115,9 @@ services:
       SESSION_DURATION: "45"    # 0 = stay connected forever
       IDLE_BETWEEN: "5"
       STATS_INTERVAL: "5"
+    volumes:
+      - ./data:/trace/data:ro
+      - ./22_decoded:/trace/raw:ro
     ulimits:
       nofile:
         soft: 65536

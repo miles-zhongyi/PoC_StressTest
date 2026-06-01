@@ -40,6 +40,7 @@ HTTP_PORT = int(os.environ.get("DU_HTTP_PORT", "8080"))
 TOTAL_PRBS = int(os.environ.get("TOTAL_PRBS", "273"))
 SCS_KHZ = int(os.environ.get("SCS_KHZ", "30"))
 MONITOR_INTERVAL = float(os.environ.get("MONITOR_INTERVAL", "5"))
+TRAFFIC_PROFILE = os.environ.get("TRAFFIC_PROFILE", "voip").lower()
 
 
 def log(msg):
@@ -80,7 +81,7 @@ class DU:
         ue_id = msg["ue_id"]
         sinr = msg["rf"]["sinr_dl_db"]
         demand = msg["demand_mbps"]
-        required, per_prb, se = rf.prbs_for_demand(demand, sinr, SCS_KHZ)
+        required, per_prb, se = rf.prbs_for_traffic(demand, sinr, SCS_KHZ, TRAFFIC_PROFILE)
         if required is None:
             cell.rejected_total += 1
             return {"type": P.RRC_REJECT, "ue_id": ue_id, "cause": "no-coverage"}
@@ -93,7 +94,7 @@ class DU:
         cell.sessions[ue_id] = {
             "ue_id": ue_id, "cell_id": cell.cell_id, "prbs": required,
             "sinr_dl_db": round(sinr, 1), "se": round(se, 2), "per_prb_mbps": per_prb,
-            "demand_mbps": demand, "updated": time.time(),
+            "demand_mbps": demand, "traffic_profile": TRAFFIC_PROFILE, "updated": time.time(),
         }
         return {"type": P.RRC_SETUP, "ue_id": ue_id, "cell_id": cell.cell_id,
                 "allocated_prbs": required, "mcs": rf.mcs_from_se(se)}
@@ -105,7 +106,8 @@ class DU:
         if sess is None:
             return {"type": P.RRC_REJECT, "ue_id": ue_id, "cause": "unknown-ue"}
         sinr = msg["rf"]["sinr_dl_db"]
-        required, per_prb, se = rf.prbs_for_demand(sess["demand_mbps"], sinr, SCS_KHZ)
+        profile = sess.get("traffic_profile", TRAFFIC_PROFILE)
+        required, per_prb, se = rf.prbs_for_traffic(sess["demand_mbps"], sinr, SCS_KHZ, profile)
         if required is None:
             cell.used_prbs -= sess["prbs"]
             cell.released_total += 1
@@ -120,6 +122,8 @@ class DU:
         else:
             new_prbs = required
             congested = False
+        if profile == "voip":
+            new_prbs = min(new_prbs, rf.VOIP_MAX_PRBS)
         cell.used_prbs += (new_prbs - old)
         sess.update(prbs=new_prbs, sinr_dl_db=round(sinr, 1), se=round(se, 2),
                     per_prb_mbps=per_prb, updated=time.time(), congested=congested)
@@ -254,7 +258,7 @@ async def main():
     server = await asyncio.start_server(du.serve_f1, "0.0.0.0", TCP_PORT, backlog=512)
     asyncio.create_task(du.monitor())
     log(f"listening on :{TCP_PORT} (F1)  status http://0.0.0.0:{HTTP_PORT}/status")
-    log(f"cell capacity per RU: {TOTAL_PRBS} PRBs @ {SCS_KHZ} kHz SCS")
+    log(f"cell capacity per RU: {TOTAL_PRBS} PRBs @ {SCS_KHZ} kHz SCS  traffic={TRAFFIC_PROFILE}")
     async with server:
         await server.serve_forever()
 

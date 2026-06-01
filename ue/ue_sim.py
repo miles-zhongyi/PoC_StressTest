@@ -41,6 +41,9 @@ for _p in (_HERE, os.path.dirname(_HERE)):
 
 from common import protocol as P
 from common import rf_model as rf
+from pathlib import Path
+
+from common.trace_replay import TraceReplayPlan, group_by_ue, load_index, select_ues
 
 # ---- configuration (env-overridable) ------------------------------------
 RU_HOST = os.environ.get("RU_HOST", "127.0.0.1")
@@ -99,9 +102,12 @@ def best_ru(pos):
     """The strongest RU (highest RSRP) for a given position."""
     return max(RUS, key=lambda r: rsrp_from(r, pos))
 
-# per-UE heterogeneity is sampled from these ranges ("different power", demand, speed)
-DEMAND_MIN = float(os.environ.get("DEMAND_MIN_MBPS", "5"))
-DEMAND_MAX = float(os.environ.get("DEMAND_MAX_MBPS", "30"))
+# Traffic profile: voip (default) uses kbps-scale voice demand; data restores Mbps stress.
+TRAFFIC_PROFILE = os.environ.get("TRAFFIC_PROFILE", "voip").lower()
+# per-UE heterogeneity ("different power", demand, speed)
+_default_demand = ("0.012", "0.048") if TRAFFIC_PROFILE != "data" else ("5", "30")
+DEMAND_MIN = float(os.environ.get("DEMAND_MIN_MBPS", _default_demand[0]))
+DEMAND_MAX = float(os.environ.get("DEMAND_MAX_MBPS", _default_demand[1]))
 TX_POWERS = [float(x) for x in os.environ.get("UE_TX_POWERS_DBM", "20,23,26").split(",")]
 SPEED_MIN = float(os.environ.get("SPEED_MIN_MPS", "1"))
 SPEED_MAX = float(os.environ.get("SPEED_MAX_MPS", "30"))
@@ -115,6 +121,10 @@ IDLE_BETWEEN = float(os.environ.get("IDLE_BETWEEN", "5"))
 RAMP_SECONDS = float(os.environ.get("RAMP_SECONDS", "10"))          # spread attaches
 STATS_INTERVAL = float(os.environ.get("STATS_INTERVAL", "5"))
 HTTP_PORT = int(os.environ.get("UE_HTTP_PORT", "8081"))
+REPLAY_MODE = os.environ.get("REPLAY_MODE", "").lower() in ("1", "true", "yes", "trace")
+TRACE_INDEX = os.environ.get("TRACE_INDEX", "")
+REPLAY_SPEED = float(os.environ.get("REPLAY_SPEED", "1.0"))
+MAX_REPLAY_UES = int(os.environ.get("MAX_REPLAY_UES", "0"))  # 0 = use target_num_ues
 
 target_num_ues = NUM_UES
 ue_tasks: dict[int, asyncio.Task] = {}
@@ -376,7 +386,9 @@ async def one_session(uid, demand, txp, walk):
                     vlog(uid, f"dropped on {serving['name']}: {r.get('cause')}")
                     return
             if now - last_data >= DATA_INTERVAL:
-                await P.async_send_msg(writer, {"type": P.DATA, "ue_id": uid, "bytes": 1_000_000})
+                # VoIP-sized PDU (~20 ms frame); data profile keeps a larger stub.
+                payload = 500 if TRAFFIC_PROFILE != "data" else 1_000_000
+                await P.async_send_msg(writer, {"type": P.DATA, "ue_id": uid, "bytes": payload})
                 await P.async_recv_msg(reader)
                 last_data = now
             await asyncio.sleep(0.2)
@@ -394,6 +406,92 @@ async def one_session(uid, demand, txp, walk):
                 writer.close()
             except OSError:
                 pass
+
+
+async def replay_trace_ue(uid: str, plan: TraceReplayPlan, demand: float, txp: float, speed: float):
+    """Drive one UE from call-trace events at the recorded times."""
+    walk = Walk(speed)
+    reader = writer = None
+    serving = None
+    connected = False
+    wall0 = time.time()
+    for ev in plan.events:
+        delay = plan.sim_delay(ev["t"]) - (time.time() - wall0)
+        if delay > 0:
+            await asyncio.sleep(delay)
+        kind = ev["kind"]
+        if kind == "attach" and not connected:
+            S.attempts += 1
+            pos = walk.pos()
+            serving = best_ru(pos)
+            try:
+                reader, writer, reply = await _setup(serving, uid, demand, txp, pos)
+            except (OSError, asyncio.IncompleteReadError, ConnectionError):
+                S.conn_err += 1
+                continue
+            if reply.get("type") == P.RRC_REJECT:
+                S.rejected += 1
+                vlog(uid, f"trace attach rejected: {reply.get('cause')} ({ev['trace_msg']})")
+                try:
+                    writer.close()
+                except OSError:
+                    pass
+                reader = writer = None
+                continue
+            connected = True
+            S.admitted += 1
+            S.active += 1
+            vlog(uid, f"trace attach {ev['trace_msg']} -> {serving['name']} "
+                 f"{reply.get('allocated_prbs')} PRB")
+        elif kind == "measurement" and connected and reader and writer:
+            pos = walk.step(REPORT_INTERVAL)
+            await P.async_send_msg(writer, {"type": P.MEASUREMENT_REPORT, "ue_id": uid,
+                                            "position": pos, "tx_power_dbm": txp})
+            r = await P.async_recv_msg(reader)
+            if r.get("type") == P.RRC_REJECT:
+                S.dropped += 1
+                connected = False
+                break
+        elif kind == "release" and connected and reader and writer:
+            await _release(reader, writer, uid)
+            reader = writer = None
+            connected = False
+            S.released += 1
+            S.active -= 1
+            vlog(uid, f"trace release {ev['trace_msg']}")
+    if connected and reader and writer:
+        await _release(reader, writer, uid)
+        S.released += 1
+        S.active -= 1
+
+
+async def run_replay():
+    """Replay selected UEs from TRACE_INDEX at trace timestamps."""
+    path = Path(TRACE_INDEX)
+    if not path.is_file():
+        log(f"TRACE_INDEX not found: {path} — run scripts/build_trace_index.py")
+        return
+    log(f"loading trace index {path} ...")
+    events = load_index(path)
+    if not events:
+        log("trace index empty")
+        return
+    by_ue = group_by_ue(events)
+    n_pick = target_num_ues if target_num_ues > 0 else (MAX_REPLAY_UES or len(by_ue))
+    picked = select_ues(by_ue, n_pick)
+    log(f"replaying {len(picked)} UEs from {len(events)} events "
+        f"({len(by_ue)} UEs in index) speed={REPLAY_SPEED}x")
+    t0 = min(e["t"] for e in events)
+    tasks = []
+    for i, (ue_key, evs) in enumerate(picked.items()):
+        uid = f"{ID_PREFIX}-trace-{ue_key}"
+        demand = random.uniform(DEMAND_MIN, DEMAND_MAX)
+        txp = random.choice(TX_POWERS)
+        speed = random.uniform(SPEED_MIN, SPEED_MAX)
+        plan = TraceReplayPlan(evs, speed=REPLAY_SPEED, t0=t0)
+        tasks.append(replay_trace_ue(uid, plan, demand, txp, speed))
+    await asyncio.gather(*tasks)
+    log("trace replay finished")
 
 
 async def run_ue(idx):
@@ -437,8 +535,14 @@ async def main():
     log(f"status http://0.0.0.0:{HTTP_PORT}/status  control POST /control")
     cluster = ", ".join(f"{r['name']}@({r['x']:.0f},{r['y']:.0f}) {r['host']}:{r['port']}" for r in RUS)
     log(f"RU cluster ({len(RUS)}): {cluster}  | HO margin {HO_MARGIN_DB} dB")
+    if REPLAY_MODE and TRACE_INDEX:
+        log(f"REPLAY_MODE: index={TRACE_INDEX} speed={REPLAY_SPEED}x")
+        asyncio.create_task(stats_monitor())
+        await run_replay()
+        return
+
     log(f"starting {target_num_ues} UEs (max {MAX_UES}) "
-        f"(demand {DEMAND_MIN}-{DEMAND_MAX} Mbps, TX {TX_POWERS} dBm, "
+        f"(profile {TRAFFIC_PROFILE}, demand {DEMAND_MIN}-{DEMAND_MAX} Mbps, TX {TX_POWERS} dBm, "
         f"speed {SPEED_MIN}-{SPEED_MAX} m/s, ramp {RAMP_SECONDS}s)")
     asyncio.create_task(stats_monitor())
     await reconcile()

@@ -5,3 +5,9 @@ __pycache__/
 venv/
 *.log
 .DS_Store
+
+# Generated call-trace index (build with scripts/build_trace_index.py)
+data/trace_index.jsonl
+
+# Raw decoded call traces (large; keep locally, rebuild index with build_trace_index.py)
+22_decoded/

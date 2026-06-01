@@ -8,6 +8,12 @@ The chain is:
     SINR                 --(Shannon)----->  spectral efficiency (bits/s/Hz)
     SE + traffic demand  --------------->   number of PRBs needed
 
+Traffic profiles:
+  * voip  — VoLTE-style voice (~12–48 kbps). Admission reserves 1–2 PRBs per
+            session (typical instant scheduling is ~1–2 PRBs per slot; the DU
+            models a sustained pool reservation capped at VOIP_MAX_PRBS).
+  * data  — broadband-style demand (Mbps), for capacity stress without a cap.
+
 It is intentionally a single-layer (no MIMO) model. Numbers land in realistic
 ranges for an n78 (3.5 GHz) 100 MHz macro cell, which is enough to make the
 capacity behaviour believable: near UEs are cheap, cell-edge UEs are expensive,
@@ -91,19 +97,52 @@ def throughput_per_prb_mbps(sinr, scs_khz=30):
     return se * prb_bandwidth_hz(scs_khz) * RE_OVERHEAD / 1e6
 
 
-def prbs_for_demand(demand_mbps, sinr, scs_khz=30):
+# VoIP: EVS/WB-AMR class codecs ~12–24 kb/s + overhead; reserve ≤2 PRBs (per-slot
+# scheduling in live networks is often 1–2 PRBs; the DU holds a small sustained grant).
+VOIP_MAX_PRBS = 2
+VOIP_MIN_PRBS = 1
+
+
+def prbs_for_demand(demand_mbps, sinr, scs_khz=30, max_prbs=None, min_prbs=1):
     """
     How many PRBs this UE needs to meet `demand_mbps` at the given SINR.
 
     Returns (required_prbs, per_prb_mbps, spectral_efficiency).
     required_prbs is None when the UE cannot be served at all (no coverage).
+  Optional max_prbs caps the grant (VoIP uses 1–2).
     """
     se = spectral_efficiency(sinr)
     if se <= 0.0:
         return None, 0.0, 0.0
     per_prb = se * prb_bandwidth_hz(scs_khz) * RE_OVERHEAD / 1e6
-    required = max(1, math.ceil(demand_mbps / per_prb))
+    required = max(min_prbs, math.ceil(demand_mbps / per_prb))
+    if max_prbs is not None:
+        required = min(required, max_prbs)
     return required, per_prb, se
+
+
+def prbs_for_voip(sinr, scs_khz=30):
+    """
+    VoLTE-style voice: reserve exactly 1 PRB (good RF) or 2 PRBs (marginal RF).
+
+    Not derived from demand_mbps — voice uses ~12–48 kb/s but only 1–2 PRBs are
+    scheduled per slot in live networks; the DU models a small sustained grant.
+    """
+    se = spectral_efficiency(sinr)
+    if se <= 0.0:
+        return None, 0.0, 0.0
+    per_prb = se * prb_bandwidth_hz(scs_khz) * RE_OVERHEAD / 1e6
+    # Marginal link: 2 PRBs; otherwise 1 (matches field reports of 1–2 PRBs/slot)
+    required = VOIP_MAX_PRBS if sinr < 5.0 else VOIP_MIN_PRBS
+    return required, per_prb, se
+
+
+def prbs_for_traffic(demand_mbps, sinr, scs_khz=30, profile="voip"):
+    """Admission grant sized by traffic profile (voip | data)."""
+    p = (profile or "voip").lower()
+    if p == "data":
+        return prbs_for_demand(demand_mbps, sinr, scs_khz, max_prbs=None)
+    return prbs_for_voip(sinr, scs_khz)
 
 
 def mcs_from_se(se):
