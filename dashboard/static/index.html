@@ -390,7 +390,7 @@
   <header>
     <div>
       <h1>5G RU Digital Twin</h1>
-      <p class="sub">Cell capacity &amp; UE load — live from DU + simulator</p>
+      <p class="sub">Cell capacity &amp; UE load — live from MME + simulator</p>
     </div>
     <div class="header-actions">
       <a class="btn-nav" href="/messages.html">Trace message catalog</a>
@@ -435,7 +435,7 @@
     <div class="geo-head">
       <div>
         <h2>UE mobility map</h2>
-        <p class="sub" style="margin-top:0.25rem">RU sites, walk boundary, live UE positions · hover for detail</p>
+        <p class="sub" style="margin-top:0.25rem">eNB sites (3 × 120° sectors), walk boundary, live UE positions</p>
       </div>
       <div class="geo-stats" id="geoStats">—</div>
     </div>
@@ -468,7 +468,7 @@
       <div class="chart-box"><canvas id="prbDonut"></canvas></div>
     </section>
     <section class="panel">
-      <h2>DU session counters (cluster total)</h2>
+      <h2>MME session counters (cluster total)</h2>
       <div class="chart-box"><canvas id="duBar"></canvas></div>
     </section>
     <section class="panel">
@@ -484,9 +484,9 @@
     </div>
     <p class="trace-meta" id="traceMeta">Waiting for a UE to attach…</p>
     <p class="cf-legend">
-      Real messages captured at the DU for one UE.
-      <span style="color:#c77dff">RRC</span> = Uu air interface ·
-      <span style="color:#56c2d6">S1AP</span> = core ·
+      Real messages captured at the MME for one UE.
+      <span style="color:#c77dff">RRC</span> = Uu (UE ↔ eNB) ·
+      <span style="color:#56c2d6">S1AP</span> = S1 (eNB ↔ MME) ·
       <span style="color:#8b93a7">TWIN</span> = user-plane stand-in ·
       click an arrow to inspect the exact message.
     </p>
@@ -641,15 +641,15 @@
         : "0.0";
       const items = [
         { label: "Cluster PRB util", val: utilPct + "%", cls: util > 0.9 ? "err" : util > 0.7 ? "warn" : "ok", hint: `${agg.used_prbs} / ${agg.total_prbs} PRBs` },
-        { label: "Connected UEs", val: agg.connected_ues, cls: "", hint: `DU sessions · ${ue.active ?? 0} active in sim` },
+        { label: "Connected UEs", val: agg.connected_ues, cls: "", hint: `MME sessions · ${ue.active ?? 0} active in sim` },
         { label: "Target UEs", val: ue.num_ues_configured, cls: "", hint: ue.sim_mode === "replaying"
           ? "Trace replay (then synthetic)"
           : ue.scaling
           ? `Scaling… ${ue.num_ues_running ?? 0} tasks running`
           : `${ue.num_ues_running ?? "—"} UE tasks · ${ue.sim_mode ?? "synthetic"}` },
         { label: "Handovers", val: ue.handovers ?? 0, cls: "ok", hint: `${ue.ho_fail ?? 0} failed (target full)` },
-        { label: "Admission reject", val: rejectRate + "%", cls: parseFloat(rejectRate) > 20 ? "warn" : "", hint: `${agg.rejected} rejected (DU)` },
-        { label: "Connection errors", val: ue.conn_err, cls: ue.conn_err > 0 ? "err" : "ok", hint: "Failed to reach RU" },
+        { label: "Admission reject", val: rejectRate + "%", cls: parseFloat(rejectRate) > 20 ? "warn" : "", hint: `${agg.rejected} rejected (MME)` },
+        { label: "Connection errors", val: ue.conn_err, cls: ue.conn_err > 0 ? "err" : "ok", hint: "Failed to reach eNB" },
       ];
       document.getElementById("kpiRow").innerHTML = items.map((k) => `
         <div class="kpi">
@@ -845,7 +845,7 @@
       if (!du?.cells?.length || !ue) {
         dot.className = "dot err";
         liveText.textContent = "Offline";
-        banner.textContent = payload.error || "Waiting for DU / UE metrics…";
+        banner.textContent = payload.error || "Waiting for MME / UE metrics…";
         banner.classList.add("show");
         return;
       }
@@ -993,6 +993,58 @@
       });
     }
 
+    /** Draw macro eNB: 3 sectors × 120° (0°, 120°, 240° azimuth from north). */
+    function drawEnbSite(ctx, sx, sy, scale, col, label) {
+      const AZIMUTHS = [0, 120, 240];
+      const SPAN = 120;
+      const covR = Math.max(55, 220 * scale);
+      const antR = Math.max(18, 28 * scale);
+
+      function sectorPath(cx, cy, azimuthDeg, spanDeg, radius) {
+        const half = spanDeg / 2;
+        const start = ((azimuthDeg - half) - 90) * Math.PI / 180;
+        const end = ((azimuthDeg + half) - 90) * Math.PI / 180;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.arc(cx, cy, radius, start, end);
+        ctx.closePath();
+      }
+
+      // coverage wedges (faint)
+      AZIMUTHS.forEach((az) => {
+        sectorPath(sx, sy, az, SPAN, covR);
+        ctx.fillStyle = col + "22";
+        ctx.fill();
+        ctx.strokeStyle = col + "55";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      });
+
+      // antenna panels (solid sectors)
+      AZIMUTHS.forEach((az) => {
+        sectorPath(sx, sy, az, SPAN, antR);
+        ctx.fillStyle = col + "cc";
+        ctx.fill();
+        ctx.strokeStyle = "#e8eaed";
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      });
+
+      // mast
+      ctx.fillStyle = "#e8eaed";
+      ctx.beginPath();
+      ctx.arc(sx, sy, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = col;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.fillStyle = "#e8eaed";
+      ctx.font = "600 11px Segoe UI, system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(label, sx, sy + antR + 16);
+    }
+
     function drawGeoMap(geo, w, h) {
       const ctx = geoCtx;
       const tf = geoTransform(geo, w, h);
@@ -1049,6 +1101,12 @@
       ctx.stroke();
       ctx.setLineDash([]);
 
+      // eNB macro sites (3 × 120° sectors) — under trails and UEs
+      (geo.cells || []).forEach((cell, i) => {
+        const [sx, sy] = toScreen(cell.x, cell.y);
+        drawEnbSite(ctx, sx, sy, scale, cellColor(i), cell.name);
+      });
+
       // trails
       geoTrails.forEach((trail, id) => {
         if (trail.length < 2) return;
@@ -1062,32 +1120,6 @@
           if (i === 0) ctx.moveTo(sx, sy);
           else ctx.lineTo(sx, sy);
         });
-        ctx.stroke();
-      });
-
-      // RU sites
-      (geo.cells || []).forEach((cell, i) => {
-        const [sx, sy] = toScreen(cell.x, cell.y);
-        const col = cellColor(i);
-        ctx.fillStyle = col;
-        ctx.strokeStyle = "#e8eaed";
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(sx, sy - 14);
-        ctx.lineTo(sx - 10, sy + 10);
-        ctx.lineTo(sx + 10, sy + 10);
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-        ctx.fillStyle = "#e8eaed";
-        ctx.font = "600 11px Segoe UI, system-ui, sans-serif";
-        ctx.textAlign = "center";
-        ctx.fillText(cell.name, sx, sy + 26);
-        // soft serving footprint
-        ctx.strokeStyle = col + "33";
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.arc(sx, sy, 180 * scale, 0, Math.PI * 2);
         ctx.stroke();
       });
 
@@ -1190,7 +1222,7 @@
 
       const legendHtml = (geo.cells || []).map((cell, i) =>
         `<div class="row"><span class="dot" style="background:${cellColor(i)}"></span>`
-        + `Circle = ${cell.name} @ (${cell.x}, ${cell.y}) m</div>`
+        + `3 × 120° = ${cell.name} @ (${cell.x}, ${cell.y}) m</div>`
       ).join("")
         + `<div class="row" style="margin-top:0.35rem"><span class="star">★</span> Star = call-flow UE (see box above)</div>`
         + `<div class="row"><span class="dot" style="background:transparent;box-shadow:0 0 0 2px #e5a84b"></span> Orange ring = anomaly (frozen / edge)</div>`
@@ -1285,8 +1317,8 @@
     }
 
     // ---- live single-UE call-flow ladder ----
-    // Three lifelines; RRC/TWIN messages ride UE<->RU, S1AP messages ride RU<->DU.
-    const NODES = { UE: 20, RU: 52, DU: 84 };   // lifeline x positions (% of ladder)
+    // Three lifelines; RRC/TWIN messages ride UE<->eNB, S1AP messages ride eNB<->MME.
+    const NODES = { UE: 20, eNB: 52, MME: 84 };   // lifeline x positions (% of ladder)
     const ROW_H = 34;
     const escHtml = (s) => String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 
@@ -1304,8 +1336,8 @@
     function endpoints(ev) {
       const core = (ev.interface || "").startsWith("S1");
       const up = ev.dir === "up";
-      if (core) return up ? ["RU", "DU"] : ["DU", "RU"];   // S1AP: radio <-> core
-      return up ? ["UE", "RU"] : ["RU", "UE"];             // RRC/TWIN: UE <-> radio
+      if (core) return up ? ["eNB", "MME"] : ["MME", "eNB"];   // S1AP: eNB <-> MME
+      return up ? ["UE", "eNB"] : ["eNB", "UE"];             // RRC/TWIN: UE <-> eNB
     }
 
     function fmtMs(ts) {
@@ -1320,8 +1352,8 @@
     function renderActors() {
       const actors = [
         { id: "UE", role: "device", cls: "ue" },
-        { id: "RU", role: "radio · Uu", cls: "" },
-        { id: "DU", role: "core · F1", cls: "" },
+        { id: "eNB", role: "radio · Uu", cls: "" },
+        { id: "MME", role: "core · S1", cls: "" },
       ];
       document.getElementById("ladActors").innerHTML = actors.map((a) => `
         <div class="lad-actor ${a.cls}" style="left:${NODES[a.id]}%">
