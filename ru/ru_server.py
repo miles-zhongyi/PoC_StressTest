@@ -30,6 +30,10 @@ for _p in (_HERE, os.path.dirname(_HERE)):
 
 from common import protocol as P
 from common import rf_model as rf
+from common.signaling import get_catalog
+from common.signaling import procedures as proc
+
+CATALOG = get_catalog()
 
 TCP_PORT = int(os.environ.get("RU_TCP_PORT", "38470"))
 DU_HOST = os.environ.get("DU_HOST", "127.0.0.1")
@@ -42,6 +46,7 @@ BANDWIDTH_MHZ = float(os.environ.get("BANDWIDTH_MHZ", "100"))
 RU_X = float(os.environ.get("RU_X", "0"))
 RU_Y = float(os.environ.get("RU_Y", "0"))
 _BW_HZ = BANDWIDTH_MHZ * 1e6
+_CELL_NUM = CATALOG.cell_num(CELL_ID)  # cosmetic numeric cell id for the realistic envelope
 
 
 def log(msg):
@@ -71,12 +76,21 @@ class F1Link:
         self.pending = {}
         self.txns = itertools.count(1)
         self.wlock = asyncio.Lock()
+        self._reader_task = None
+        self._reconnect_task = None
+
+    def _fail_pending(self, exc):
+        for fut in self.pending.values():
+            if not fut.done():
+                fut.set_exception(exc)
+        self.pending.clear()
 
     async def connect(self, retries=60, delay=1.0):
         for attempt in range(retries):
             try:
                 self.reader, self.writer = await asyncio.open_connection(DU_HOST, DU_PORT)
-                asyncio.create_task(self._reader_loop())
+                if self._reader_task is None or self._reader_task.done():
+                    self._reader_task = asyncio.create_task(self._reader_loop())
                 log(f"F1 link established to DU {DU_HOST}:{DU_PORT}")
                 return
             except OSError:
@@ -93,39 +107,74 @@ class F1Link:
                 if fut and not fut.done():
                     fut.set_result(reply)
         except (asyncio.IncompleteReadError, ConnectionError, OSError):
-            for fut in self.pending.values():
-                if not fut.done():
-                    fut.set_exception(ConnectionError("F1 link down"))
-            self.pending.clear()
-            log("F1 link to DU lost — exiting for restart")
-            os._exit(1)   # let the container manager restart us cleanly
+            self._fail_pending(ConnectionError("F1 link down"))
+            self.reader = None
+            self.writer = None
+            log("F1 link to DU lost — reconnecting (Uu stays up)")
+            if self._reconnect_task is None or self._reconnect_task.done():
+                self._reconnect_task = asyncio.create_task(self._reconnect_loop())
+
+    async def _reconnect_loop(self):
+        delay = 0.5
+        while self.writer is None:
+            try:
+                await self.connect(retries=1, delay=0.2)
+                return
+            except ConnectionError:
+                await asyncio.sleep(delay)
+                delay = min(delay * 1.5, 5.0)
+
+    async def _ensure_connected(self):
+        if self.writer is not None:
+            return
+        if self._reconnect_task and not self._reconnect_task.done():
+            await self._reconnect_task
+        elif self.writer is None:
+            await self._reconnect_loop()
 
     async def request(self, msg):
+        await self._ensure_connected()
         txn = next(self.txns)
         fut = asyncio.get_event_loop().create_future()
         self.pending[txn] = fut
         msg["txn"] = txn
-        async with self.wlock:
-            await P.async_send_msg(self.writer, msg)
-        return await fut
+        try:
+            async with self.wlock:
+                await P.async_send_msg(self.writer, msg)
+            return await fut
+        except (ConnectionError, OSError, asyncio.IncompleteReadError) as exc:
+            self._fail_pending(exc)
+            self.reader = None
+            self.writer = None
+            if self._reconnect_task is None or self._reconnect_task.done():
+                self._reconnect_task = asyncio.create_task(self._reconnect_loop())
+            raise
 
 
 F1 = F1Link()
 
 
 async def serve_ue(reader, writer):
+    """One Uu socket per UE. The RU is the radio: it stamps the serving cell and the
+    RF it computes from the UE's geometry into the message's `_twin` sidecar, then
+    transparently proxies the realistic signalling to the DU over the multiplexed F1
+    link and relays the reply back."""
     ue_id = None
     released = False
     try:
         while True:
             msg = await P.async_recv_msg(reader)        # uplink from UE
-            ue_id = msg.get("ue_id", ue_id)
-            msg["cell_id"] = CELL_ID
-            if "position" in msg:
-                msg["rf"] = compute_rf(msg["position"], msg.get("tx_power_dbm", 23.0))
+            tw = msg.get("_twin") or {}
+            ue_id = tw.get("ue_id", ue_id)
+            msg["cell_id"] = _CELL_NUM                  # cosmetic (realistic envelope)
+            tw["cell"] = CELL_ID                         # functional: the serving cell
+            pos = tw.get("position")
+            if pos is not None:
+                tw["rf"] = compute_rf(pos, tw.get("tx_power_dbm", 23.0))
+            msg["_twin"] = tw
             reply = await F1.request(msg)               # multiplexed to DU
             await P.async_send_msg(writer, reply)       # downlink to UE
-            if msg.get("type") == P.RRC_RELEASE:
+            if CATALOG.is_final_uplink(msg):            # UE completed its release
                 released = True
                 break
     except (asyncio.IncompleteReadError, ConnectionError, OSError):
@@ -133,7 +182,9 @@ async def serve_ue(reader, writer):
     finally:
         if ue_id and not released:                      # UE vanished -> free PRBs
             try:
-                await F1.request({"type": P.RRC_RELEASE, "ue_id": ue_id, "cell_id": CELL_ID})
+                await F1.request(CATALOG.build(proc.S1_UE_CONTEXT_RELEASE_REQUEST,
+                                               ue_id=ue_id, cell=CELL_ID,
+                                               step=proc.STEP_RELEASE_REQUEST))
             except (ConnectionError, OSError):
                 pass
         try:

@@ -1,0 +1,7 @@
+# Optional overlay: replay call-trace timing once at startup, then synthetic UEs.
+#   docker compose -f docker-compose.yml -f docker-compose.trace.yml up -d --build
+services:
+  ue-sim:
+    environment:
+      REPLAY_MODE: "1"
+      REPLAY_SPEED: "10"

@@ -27,6 +27,10 @@ services:
       SCS_KHZ: "30"
       MONITOR_INTERVAL: "5"
       TRAFFIC_PROFILE: "voip"  # 1–2 PRBs per voice session (see common/rf_model.py)
+      RADIO_TECH: "lte"        # realistic LTE (RRC/S1AP) signalling; nr reserved for 5G
+      LTE_TEMPLATES: "/trace/data/lte_templates.json"  # real message templates (optional; built-in defaults otherwise)
+    volumes:
+      - ./data:/trace/data:ro
     ports:
       - "9080:8080"   # 9080 on host: 8080 is often in Windows excludedportrange
     networks: [ran]
@@ -51,6 +55,10 @@ services:
       TX_GAIN_DB: "15"
       RU_X: "-600"             # cluster geometry: cell-1 sits left of origin
       RU_Y: "0"
+      RADIO_TECH: "lte"
+      LTE_TEMPLATES: "/trace/data/lte_templates.json"
+    volumes:
+      - ./data:/trace/data:ro
     ulimits:                   # one socket per UE -> raise the fd limit
       nofile:
         soft: 65536
@@ -74,6 +82,10 @@ services:
       TX_GAIN_DB: "15"
       RU_X: "600"             # cluster geometry: cell-2 sits right of origin
       RU_Y: "0"
+      RADIO_TECH: "lte"
+      LTE_TEMPLATES: "/trace/data/lte_templates.json"
+    volumes:
+      - ./data:/trace/data:ro
     ulimits:
       nofile:
         soft: 65536
@@ -94,19 +106,24 @@ services:
         [{"name":"cell-1","host":"ru","port":38470,"x":-600,"y":0},
          {"name":"cell-2","host":"ru2","port":38470,"x":600,"y":0}]
       HO_MARGIN_DB: "3"         # A3 hysteresis: neighbour must beat serving by 3 dB
+      RADIO_TECH: "lte"         # realistic LTE (RRC/S1AP) signalling; nr reserved for 5G
+      LTE_TEMPLATES: "/trace/data/lte_templates.json"  # real templates (built by scripts/build_message_templates.py)
       RU_HOST: ru               # fallback if RU_LIST is unset
       RU_PORT: "38470"
       NUM_UES: "${NUM_UES:-1}"  # override: NUM_UES=2000 docker compose up
+      UE_TARGET_STATE: "/trace/data/ue_target.json"  # survives ue-sim restart (dashboard scale)
       MAX_UES: "5000"           # ceiling for dashboard / POST /control
-      RAMP_SECONDS: "10"        # spread the attaches so they don't all hit at once
+      UE_SPAWN_BATCH: "25"      # spawn UE tasks in batches (avoids connection_refused storms)
+      UE_SPAWN_INTERVAL: "0.2"
+      RAMP_SECONDS: "30"        # spread attach attempts across UEs (raise for 300+ UEs)
       TRAFFIC_PROFILE: "voip"   # voip | data (Mbps stress)
       # VoIP: DU assigns fixed 1–2 PRBs/session (not derived from demand)
       DEMAND_MIN_MBPS: "0.012"
       DEMAND_MAX_MBPS: "0.048"
-      # Call-trace replay (after: python scripts/build_trace_index.py)
-      REPLAY_MODE: "${REPLAY_MODE:-0}"          # 1 = replay trace_index timing
+      # Synthetic load by default. Trace replay: docker compose -f docker-compose.trace.yml up
+      REPLAY_MODE: "0"
       TRACE_INDEX: "/trace/data/trace_index.jsonl"
-      REPLAY_SPEED: "${REPLAY_SPEED:-10}"        # 10x faster than real time
+      REPLAY_SPEED: "10"
       UE_TX_POWERS_DBM: "20,23,26"
       SPEED_MIN_MPS: "1"
       SPEED_MAX_MPS: "30"
@@ -116,7 +133,7 @@ services:
       IDLE_BETWEEN: "5"
       STATS_INTERVAL: "5"
     volumes:
-      - ./data:/trace/data:ro
+      - ./data:/trace/data
       - ./22_decoded:/trace/raw:ro
     ulimits:
       nofile:
@@ -133,9 +150,17 @@ services:
     depends_on: [du, ue-sim]
     environment:
       DU_STATUS_URL: http://du:8080/status
+      DU_TRACE_URL: http://du:8080/trace
       UE_STATUS_URL: http://ue-sim:8081/status
       UE_CONTROL_URL: http://ue-sim:8081/control
+      UE_GEO_URL: http://ue-sim:8081/geo
+      RECORD_ID_MESSAGES: /app/CallFlow/record-id-messages.txt
+      TRACE_DECODED_DIR: /trace/raw
+      TRACE_SAMPLES_CACHE: /trace/data/trace_message_samples.json
       DASHBOARD_PORT: "9090"
+    volumes:
+      - ./22_decoded:/trace/raw:ro
+      - ./data:/trace/data
     ports:
       - "9090:9090"
     networks: [ran]

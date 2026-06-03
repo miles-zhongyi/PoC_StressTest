@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Trace message catalog — 22_decoded</title>
+  <style>
+    :root {
+      --bg: #0c0f14;
+      --card: #151a22;
+      --border: #2a3140;
+      --text: #e8eaed;
+      --muted: #8b93a7;
+      --accent: #4d9fff;
+      --ok: #3dd68c;
+      --warn: #e5a84b;
+      --err: #f07178;
+      --trace-ue: #ff46f5;
+      --diff-l: rgba(77, 159, 255, 0.08);
+      --diff-r: rgba(255, 70, 245, 0.08);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.45;
+      padding: 1.25rem 1.5rem 2rem;
+      max-width: 1600px;
+      margin: 0 auto;
+    }
+    header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin-bottom: 1.25rem;
+    }
+    h1 { font-size: 1.15rem; font-weight: 600; }
+    .sub { font-size: 0.8rem; color: var(--muted); margin-top: 0.25rem; }
+    .btn {
+      display: inline-block;
+      padding: 0.45rem 0.85rem;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: #0a0d11;
+      color: var(--text);
+      font-size: 0.8rem;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .btn:hover { border-color: var(--accent); }
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem 1.1rem;
+      margin-bottom: 1rem;
+    }
+    .panel h2 {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--muted);
+      margin-bottom: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .picker-row { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; }
+    select {
+      flex: 1;
+      min-width: 280px;
+      padding: 0.5rem 0.6rem;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: #0a0d11;
+      color: var(--text);
+      font-size: 0.85rem;
+    }
+    .meta {
+      font-size: 0.76rem;
+      color: var(--muted);
+      margin-top: 0.5rem;
+      font-variant-numeric: tabular-nums;
+    }
+    .meta .ok { color: var(--ok); }
+    .meta .warn { color: var(--warn); }
+    .meta .err { color: var(--err); }
+    .banner {
+      display: none;
+      background: #2a1a1a;
+      border: 1px solid var(--err);
+      color: var(--err);
+      padding: 0.6rem 0.85rem;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      margin-bottom: 1rem;
+    }
+    .banner.show { display: block; }
+    .hint {
+      font-size: 0.72rem;
+      color: var(--muted);
+      margin-bottom: 0.65rem;
+      line-height: 1.4;
+    }
+    .hint code { color: var(--accent); font-size: 0.7rem; }
+    .token-list { font-size: 0.7rem; color: var(--muted); margin-bottom: 0.5rem; }
+
+    /* ---- line-aligned JSON panes ---- */
+    .align-placeholder {
+      color: var(--muted);
+      font-size: 0.85rem;
+      padding: 1rem;
+      background: #0a0d11;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+    }
+    .align-view {
+      display: flex;
+      flex-direction: column;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #0a0d11;
+      overflow: hidden;
+    }
+    .align-head {
+      display: grid;
+      background: #12161e;
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+    .align-h {
+      padding: 0.4rem 0.55rem;
+      font-size: 0.68rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      color: var(--muted);
+      border-left: 1px solid var(--border);
+    }
+    .align-scroll { overflow: auto; flex: 1; }
+    .align-row {
+      display: grid;
+      font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+      font-size: 0.7rem;
+      line-height: 1.45;
+      min-height: 1.45em;
+    }
+    .align-row:hover { background: rgba(255, 255, 255, 0.03); }
+    .align-ln {
+      color: var(--muted);
+      text-align: right;
+      padding: 0 0.45rem 0 0.35rem;
+      border-right: 1px solid var(--border);
+      user-select: none;
+    }
+    .align-cell {
+      padding: 0 0.5rem;
+      white-space: pre;
+      overflow-x: auto;
+      border-left: 1px solid var(--border);
+    }
+    .align-row.diff .align-cell:nth-child(2) { background: var(--diff-l); }
+    .align-row.diff .align-cell:nth-child(3) { background: var(--diff-r); }
+    .align-row.diff .align-cell:nth-child(4) { background: var(--diff-r); }
+
+    .live-msg {
+      margin-bottom: 1.25rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .live-msg:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+    .live-msg-head {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem 1rem;
+      align-items: baseline;
+      margin-bottom: 0.5rem;
+      font-size: 0.78rem;
+    }
+    .live-msg-head .name { font-weight: 600; }
+    .live-msg-head .dir { color: var(--muted); }
+    .live-msg-head .dir.up { color: var(--ok); }
+    .live-msg-head .dir.down { color: var(--accent); }
+    .live-msg-head .iface { color: var(--muted); font-size: 0.72rem; }
+    .live-trace-ue { color: var(--trace-ue); }
+    .pin-btn, .unpin-btn {
+      margin-left: auto;
+      padding: 0.15rem 0.5rem;
+      border-radius: 5px;
+      border: 1px solid var(--border);
+      background: #0a0d11;
+      color: var(--text);
+      font-size: 0.7rem;
+      cursor: pointer;
+    }
+    .pin-btn:hover { border-color: var(--trace-ue); }
+    .unpin-btn:hover { border-color: var(--err); }
+    .pinned-wrap:empty { display: none; }
+    .pinned-wrap {
+      margin-bottom: 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 2px dashed var(--border);
+    }
+    .pinned-title {
+      font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em;
+      color: var(--trace-ue); margin-bottom: 0.5rem;
+    }
+    .live-msg.pinned { border-left: 3px solid var(--trace-ue); padding-left: 0.6rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Decoded trace message catalog</h1>
+      <p class="sub">Line-aligned samples from <code>22_decoded</code> and live call-flow UE from the dashboard.</p>
+    </div>
+    <a class="btn" href="/">← Dashboard</a>
+  </header>
+
+  <div class="banner" id="errorBanner"></div>
+
+  <section class="panel">
+    <h2>Select message type</h2>
+    <div class="picker-row">
+      <select id="messageSelect" disabled>
+        <option value="">Loading catalog…</option>
+      </select>
+    </div>
+    <p class="meta" id="catalogMeta">—</p>
+  </section>
+
+  <section class="panel">
+    <h2>Catalog: trace sample vs twin template</h2>
+    <p class="hint">Each row is one line of JSON — left and right stay aligned. Highlighted rows differ (usually <code>&lt;&lt;token&gt;&gt;</code> envelope fields).</p>
+    <p class="meta" id="sampleMeta"></p>
+    <p class="token-list" id="tokenList"></p>
+    <div id="catalogAlign"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Live call-flow UE</h2>
+    <p class="hint">The <b>last 2</b> messages of the traced UE: <b>live twin message</b> (left) vs the actual <b>22_decoded trace record</b> of the same type (right), line-aligned — differing lines are highlighted. Click <b>📌 Pin</b> to keep a message for inspection while the flow continues.</p>
+    <p class="meta" id="liveTraceMeta">Waiting for traced UE…</p>
+    <div class="pinned-wrap" id="pinnedMessages"></div>
+    <div id="liveTraceMessages"></div>
+  </section>
+
+  <script src="/aligned-view.js"></script>
+  <script>
+    const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+    const select = document.getElementById("messageSelect");
+    const catalogMeta = document.getElementById("catalogMeta");
+    const sampleMeta = document.getElementById("sampleMeta");
+    const tokenList = document.getElementById("tokenList");
+    const catalogAlign = document.getElementById("catalogAlign");
+    const liveTraceMeta = document.getElementById("liveTraceMeta");
+    const liveTraceMessages = document.getElementById("liveTraceMessages");
+    const banner = document.getElementById("errorBanner");
+
+    let catalog = [];
+    const catalogSampleCache = new Map();
+
+    function showError(msg) {
+      banner.textContent = msg;
+      banner.classList.add("show");
+    }
+
+    // Real 22_decoded record is matched by record_id (the stable per-type id the twin
+    // stamps, from record-id-messages.txt). Cached so the live poll barely hits the server.
+    async function fetchSampleByRecordId(recordId) {
+      if (recordId == null) return null;
+      const cacheKey = `rid:${recordId}`;
+      if (catalogSampleCache.has(cacheKey)) return catalogSampleCache.get(cacheKey);
+      let rec = null;
+      try {
+        const r = await fetch(`/api/trace-sample?record_id=${encodeURIComponent(recordId)}`);
+        if (r.ok) { const data = await r.json(); rec = data.message || null; }
+      } catch (_) { /* ignore */ }
+      catalogSampleCache.set(cacheKey, rec);
+      return rec;
+    }
+
+    function renderMeta(status) {
+      if (!status) return;
+      const parts = [
+        `<span><b>${status.total}</b> catalog entries</span>`,
+        `<span class="${status.found === status.total ? "ok" : "warn"}"><b>${status.found}</b> samples indexed</span>`,
+      ];
+      if (status.building) parts.push(`<span class="warn">indexing traces…</span>`);
+      if (status.files_scanned) parts.push(`<span>${status.files_scanned} files scanned</span>`);
+      if (status.error) parts.push(`<span class="err">${esc(status.error)}</span>`);
+      catalogMeta.innerHTML = parts.join(" · ");
+    }
+
+    function fillSelect(entries) {
+      const groups = {};
+      entries.forEach((e) => { (groups[e.section] ||= []).push(e); });
+      select.innerHTML = "";
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = "— choose record_id / message_name —";
+      select.appendChild(placeholder);
+      Object.keys(groups).sort().forEach((section) => {
+        const og = document.createElement("optgroup");
+        og.label = section;
+        groups[section].forEach((e) => {
+          const opt = document.createElement("option");
+          opt.value = e.key;
+          opt.textContent = `${e.found ? "✓ " : "✗ "}${e.label}`;
+          og.appendChild(opt);
+        });
+        select.appendChild(og);
+      });
+      select.disabled = false;
+    }
+
+    async function loadCatalog() {
+      try {
+        const r = await fetch("/api/trace-catalog");
+        const data = await r.json();
+        if (data.error) { showError(data.error); return; }
+        catalog = data.entries || [];
+        renderMeta(data.status);
+        fillSelect(catalog);
+        const key = new URLSearchParams(location.search).get("key");
+        if (key && catalog.some((e) => e.key === key)) {
+          select.value = key;
+          loadSample(key);
+        } else {
+          renderAlignedPlaceholder(catalogAlign, "Choose a message type from the menu.");
+        }
+      } catch (e) { showError(String(e)); }
+    }
+
+    async function loadSample(key) {
+      if (!key) {
+        renderAlignedPlaceholder(catalogAlign, "Choose a message type from the menu.");
+        sampleMeta.textContent = "";
+        tokenList.textContent = "";
+        return;
+      }
+      renderAlignedPlaceholder(catalogAlign, "Loading…");
+      history.replaceState(null, "", `?key=${encodeURIComponent(key)}`);
+      try {
+        const r = await fetch(`/api/trace-sample?key=${encodeURIComponent(key)}`);
+        const data = await r.json();
+        if (!r.ok || data.error) {
+          renderAlignedPlaceholder(catalogAlign, data.error || "Sample not found.");
+          return;
+        }
+        const m = data.message || {};
+        const tpl = data.template;
+        sampleMeta.innerHTML =
+          `record_id <b>${esc(data.record_id)}</b> · message_name <b>${esc(data.message_name)}</b>`
+          + ` · file <b>${esc(data.source_file)}</b>`;
+        const tokens = data.template_tokens || [];
+        tokenList.textContent = tokens.length
+          ? `Tokenized envelope fields: ${tokens.map((t) => "<<" + t + ">>").join(", ")}`
+          : "";
+        renderAlignedPair(m, tpl, {
+          leftTitle: "22_decoded trace record",
+          rightTitle: "Twin template",
+          maxHeight: "65vh",
+        });
+        const entry = catalog.find((e) => e.key === key);
+        if (entry) entry.found = true;
+      } catch (e) {
+        renderAlignedPlaceholder(catalogAlign, String(e));
+      }
+    }
+
+    function renderAlignedPair(leftObj, rightObj, opts) {
+      renderAlignedColumns(catalogAlign, [
+        { title: opts.leftTitle || "22_decoded trace record", obj: leftObj },
+        { title: opts.rightTitle || "Twin template", obj: rightObj },
+      ], { maxHeight: opts.maxHeight || "65vh" });
+    }
+
+    function fmtTraceTime(ts) {
+      const d = new Date(ts * 1000);
+      return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", fractionalSecondDigits: 3 });
+    }
+
+    const pinnedMessages = document.getElementById("pinnedMessages");
+    let liveUeId = null;
+    const pinned = [];   // [{id, ev, sample}] — frozen snapshots for inspection
+
+    function headHtml(ev, btnHtml) {
+      const dirCls = ev.dir === "up" ? "up" : "down";
+      return `<div class="live-msg-head">`
+        + `<span class="name">${esc(ev.name || "?")}</span>`
+        + `<span class="dir ${dirCls}">${ev.dir === "up" ? "UE → net" : "net → UE"}</span>`
+        + `<span class="iface">${esc(ev.interface || "")}${ev.step ? " · " + esc(ev.step) : ""}</span>`
+        + `<span>${fmtTraceTime(ev.t)}</span>`
+        + btnHtml
+        + `</div>`;
+    }
+
+    // Live twin message (left) vs the actual 22_decoded record of the same type (right).
+    function comparisonColumns(ev, sample) {
+      const liveLines = jsonLines(ev.message || {});
+      const realCol = sample
+        ? { title: "22_decoded trace record", obj: sample }
+        : { title: "22_decoded trace record",
+            lines: liveLines.map((_, i) => i === 0 ? "(no indexed 22_decoded record for this message type)" : "") };
+      return [{ title: "Live twin message", obj: ev.message || {} }, realCol];
+    }
+
+    function renderPinned() {
+      pinnedMessages.innerHTML = pinned.length
+        ? `<div class="pinned-title">📌 Pinned for inspection</div>` : "";
+      pinned.forEach((p) => {
+        const block = document.createElement("div");
+        block.className = "live-msg pinned";
+        block.innerHTML = headHtml(p.ev, `<button class="unpin-btn">✕ Unpin</button>`)
+          + `<div class="live-align"></div>`;
+        pinnedMessages.appendChild(block);
+        renderAlignedColumns(block.querySelector(".live-align"), comparisonColumns(p.ev, p.sample), { maxHeight: "42vh" });
+        block.querySelector(".unpin-btn").addEventListener("click", () => {
+          const i = pinned.findIndex((x) => x.id === p.id);
+          if (i >= 0) { pinned.splice(i, 1); renderPinned(); }
+        });
+      });
+    }
+
+    async function renderLiveTrace(data) {
+      if (!data || data.error) {
+        liveTraceMeta.innerHTML = `<span class="err">${esc(data?.error || "Trace unavailable")}</span>`;
+        liveTraceMessages.innerHTML = "";
+        return;
+      }
+      if (!data.ue_id) {
+        liveTraceMeta.textContent = "Waiting for a UE to attach on the dashboard…";
+        liveTraceMessages.innerHTML = `<div class="align-placeholder">No traced UE yet. Open the main dashboard and wait for an attach, or click “Trace next UE”.</div>`;
+        return;
+      }
+      if (data.ue_id !== liveUeId) {   // new UE -> pins belonged to the old one
+        liveUeId = data.ue_id;
+        pinned.length = 0;
+        renderPinned();
+      }
+      const pill = data.complete ? `<span class="ok">complete</span>` : `<span class="ok">capturing…</span>`;
+      liveTraceMeta.innerHTML =
+        `<span class="live-trace-ue">★ <b>${esc(data.ue_id)}</b></span> · `
+        + `<b>${data.count || 0}</b> messages · showing last 2 · ${pill}`;
+
+      const events = data.events || [];
+      if (!events.length) {
+        liveTraceMessages.innerHTML = `<div class="align-placeholder">No messages captured yet.</div>`;
+        return;
+      }
+
+      // Only the last 2 messages (live tail).
+      const start = Math.max(0, events.length - 2);
+      liveTraceMessages.innerHTML = "";
+      for (let i = start; i < events.length; i++) {
+        const ev = events[i];
+        const sample = await fetchSampleByRecordId((ev.message || {}).record_id);
+        const block = document.createElement("div");
+        block.className = "live-msg";
+        block.innerHTML = headHtml(ev, `<button class="pin-btn">📌 Pin</button>`)
+          + `<div class="live-align"></div>`;
+        liveTraceMessages.appendChild(block);
+        renderAlignedColumns(block.querySelector(".live-align"), comparisonColumns(ev, sample), { maxHeight: "42vh" });
+        const pid = `${liveUeId}#${i}`;
+        block.querySelector(".pin-btn").addEventListener("click", () => {
+          if (!pinned.some((x) => x.id === pid)) {
+            pinned.push({ id: pid, ev, sample });
+            renderPinned();
+          }
+        });
+      }
+    }
+
+    async function pollLiveTrace() {
+      try {
+        const r = await fetch("/api/trace");
+        await renderLiveTrace(await r.json());
+      } catch (e) {
+        liveTraceMeta.innerHTML = `<span class="err">${esc(String(e))}</span>`;
+      }
+    }
+
+    select.addEventListener("change", () => loadSample(select.value));
+
+    async function pollCatalogStatus() {
+      try {
+        const r = await fetch("/api/trace-catalog");
+        const data = await r.json();
+        if (data.status) renderMeta(data.status);
+        if (data.status?.building) setTimeout(pollCatalogStatus, 2000);
+      } catch (_) { /* ignore */ }
+    }
+
+    loadCatalog().then(() => pollCatalogStatus());
+    pollLiveTrace();
+    setInterval(pollLiveTrace, 1500);
+  </script>
+</body>
+</html>

@@ -1,0 +1,45 @@
+#RRC
+record_id 1: counterCheckResponse | cellChangeOrderFromUTRAN
+record_id 2: RRC_MEASUREMENT_REPORT | cellChangeOrderFromUTRANFailure
+record_id 8: RRC_MEASUREMENT_REPORT | measurementControl, pagingType2
+record_id 9: RRC_RRC_CONNECTION_RECONFIGURATION_COMPLETE | handoverToUTRANComplete, pagingType1
+record_id 11: RRC_RRC_CONNECTION_RELEASE | physicalChannelReconfigurationFailure, radioBearerReconfigurationComplete
+record_id 12: RRC_RRC_CONNECTION_REQUEST | c1, pagingType1, signallingConnectionReleaseIndication, transportChannelReconfigurationComplete, uraUpdate, RRC_SECURITY_MODE_COMPLETE, RRC_SECURITY_MODE_FAILURE
+record_id 13: RRC_RRC_CONNECTION_SETUP | spare2
+record_id 14: RRC_MEASUREMENT_REPORT
+record_id 15: RRC_SECURITY_MODE_COMMAND | pagingType1, radioBearerReconfigurationFailure, radioBearerReleaseComplete
+record_id 16: RRC_SECURITY_MODE_COMPLETE | physicalChannelReconfigurationFailure, radioBearerReconfigurationComplete
+record_id 18: RRC_RRC_CONNECTION_RELEASE | radioBearerReleaseFailure, radioBearerSetup
+record_id 19: RRC_UE_CAPABILITY_INFORMATION | radioBearerReleaseFailure, radioBearerSetupComplete
+record_id 20: RRC_UE_INFORMATION_REQUEST | transportFormatCombinationControl
+record_id 21: RRC_UE_INFORMATION_RESPONSE | signallingConnectionReleaseIndication
+record_id 23: RRC_RRC_CONNECTION_SETUP_COMPLETE
+
+#S1AP
+record_id 101: S1_DOWNLINK_NAS_TRANSPORT
+record_id 105: S1_ERAB_RELEASE_COMMAND
+record_id 107: S1_ERAB_RELEASE_RESPONSE
+record_id 108: S1_ERAB_SETUP_REQUEST
+record_id 109: S1_ERAB_SETUP_RESPONSE
+record_id 115: S1_HANDOVER_PREPARATION_FAILURE
+record_id 118: S1_HANDOVER_REQUIRED
+record_id 120: S1_INITIAL_CONTEXT_SETUP_REQUEST
+record_id 121: S1_INITIAL_CONTEXT_SETUP_RESPONSE
+record_id 122: S1_INITIAL_UE_MESSAGE
+record_id 124: S1_LOCATION_REPORT
+record_id 125: S1_LOCATION_REPORTING_CONTROL
+record_id 127: S1_PATH_SWITCH_REQUEST_ACKNOWLEDGE
+record_id 129: S1_PATH_SWITCH_REQUEST
+record_id 130: S1_UE_CAPABILITY_INDICATION
+record_id 134: S1_UE_CONTEXT_RELEASE_COMMAND
+record_id 135: S1_UE_CONTEXT_RELEASE_COMPLETE
+record_id 136: S1_UE_CONTEXT_RELEASE_REQUEST
+record_id 137: S1_UPLINK_NAS_TRANSPORT
+record_id 139: S1_CELL_TRAFFIC_TRACE
+record_id 144: S1_MME_STATUS_TRANSFER
+
+#X2AP
+record_id 203: X2_HANDOVER_REQUEST_ACKNOWLEDGE
+record_id 204: X2_HANDOVER_REQUEST
+record_id 205: X2_SN_STATUS_TRANSFER
+record_id 206: X2_UE_CONTEXT_RELEASE

@@ -8,6 +8,11 @@ venv/
 
 # Generated call-trace index (build with scripts/build_trace_index.py)
 data/trace_index.jsonl
+data/ue_target.json
+
+# Generated signalling message templates (build with scripts/build_message_templates.py;
+# derived from the proprietary traces — the catalog ships built-in defaults without it)
+data/lte_templates.json
 
 # Raw decoded call traces (large; keep locally, rebuild index with build_trace_index.py)
 22_decoded/

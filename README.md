@@ -88,11 +88,40 @@ docker compose down
 
 ---
 
+## Realistic signalling (LTE call flow)
+
+By default the UE↔RU↔DU exchange uses **real LTE signalling message names and
+structures** (RRC + S1AP), not invented stand-ins. Each session walks a fuller call
+flow — RRC connection request → setup → setup complete → security mode → UE
+capability → **Initial Context Setup** (the PRB grant / admission point) → measurement
+reconfiguration → S1 UE Context Release. The radio technology is selected by
+`RADIO_TECH` (`lte` today; `nr` is reserved for 5G and raises a clear error until
+implemented). See `common/signaling/` and `CallFlow/` for the reference flows.
+
+Messages are built from **templates**: the per-message-type envelope + `decoded`
+body observed in the real traces, with per-instance fields (UE m-TMSI, cell id,
+timestamp, S1AP ids …) filled in. Simulation-only state the traces lack (demand, RF,
+allocated PRBs) rides in a `_twin` sidecar.
+
+**Templates work out of the box** from built-in defaults. To use templates extracted
+from the real traces under `22_decoded/`, build the index once (host):
+
+```powershell
+$env:PYTHONPATH = (Get-Location).Path
+python scripts/build_message_templates.py --max-files 8 --out data/lte_templates.json
+```
+
+The compose file mounts `./data` into `du`, `ru`, `ru2`, `ue-sim` and points
+`LTE_TEMPLATES` at `data/lte_templates.json`; a missing file simply falls back to the
+built-in defaults. Run the signalling/flow tests with `python -m pytest tests/`.
+
+---
+
 ## Call-trace replay (real signalling timing)
 
-Use this when you have decoded call traces under `22_decoded/` and want the UE simulator to send **the same twin messages** (attach, measurement, release) at **times taken from the trace**, instead of synthetic timers.
+Use this when you have decoded call traces under `22_decoded/` and want the UE simulator to drive attach / measurement / release at **times taken from the trace**, instead of synthetic timers.
 
-The twin still uses its JSON protocol to the RU/DU — not raw ASN.1 from the trace files.
+Replay uses the same realistic LTE signalling messages as synthetic mode (see above); the trace only supplies the *timing* of each event, not raw ASN.1 from the files.
 
 ### Step A — Build the trace index (on the host, once)
 
@@ -121,11 +150,11 @@ Ensure `data/trace_index.jsonl` exists (from Step A).
 
 ```powershell
 cd path\to\poc_StressTest
-$env:REPLAY_MODE = "1"
-$env:NUM_UES = "20"       # how many traced UEs to replay
-$env:REPLAY_SPEED = "10"  # 10× faster than real time
-docker compose up -d --build
+$env:NUM_UES = "20"       # traced UEs to pick from index (if index has many UEs)
+docker compose -f docker-compose.yml -f docker-compose.trace.yml up -d --build
 ```
+
+Trace replay runs once at startup, then the stack continues in **synthetic** mode with `NUM_UES` tasks.
 
 Watch replay:
 
@@ -135,14 +164,14 @@ docker compose logs -f ue-sim
 
 Open the dashboard: http://localhost:9090
 
-**Return to synthetic mode:**
+**Return to synthetic-only mode** (dashboard stress test, no trace):
 
 ```powershell
-$env:REPLAY_MODE = "0"
+Remove-Item Env:REPLAY_MODE -ErrorAction SilentlyContinue
 docker compose up -d --build
 ```
 
-Or unset `REPLAY_MODE` and use defaults in `docker-compose.yml` (`REPLAY_MODE` defaults to `0`).
+`docker-compose.yml` pins `REPLAY_MODE=0` so a leftover `$env:REPLAY_MODE=1` in PowerShell cannot hijack the run.
 
 ---
 

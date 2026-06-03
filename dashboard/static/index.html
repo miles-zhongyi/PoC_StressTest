@@ -16,6 +16,8 @@
       --ok: #3dd68c;
       --warn: #e5a84b;
       --err: #f07178;
+      --trace-ue: #ff46f5;
+      --trace-ue-glow: rgba(255, 70, 245, 0.45);
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -24,7 +26,7 @@
       color: var(--text);
       line-height: 1.45;
       padding: 1.25rem 1.5rem 2rem;
-      max-width: 1200px;
+      max-width: 1320px;
       margin: 0 auto;
     }
     header {
@@ -49,6 +51,7 @@
       background: var(--muted);
     }
     .dot.ok { background: var(--ok); }
+    .dot.warn { background: var(--warn, #e5a84b); }
     .dot.err { background: var(--err); }
     .banner {
       display: none;
@@ -221,6 +224,166 @@
       margin-right: 0.45rem;
     }
     .cell-row-head .meta { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+    /* ---- UE mobility map ---- */
+    .geo-panel { margin-bottom: 1rem; }
+    .geo-head {
+      display: flex; align-items: flex-start; justify-content: space-between;
+      gap: 1rem; flex-wrap: wrap; margin-bottom: 0.65rem;
+    }
+    .geo-head h2 { margin: 0; }
+    .geo-stats {
+      display: flex; flex-wrap: wrap; gap: 0.5rem 1rem;
+      font-size: 0.72rem; color: var(--muted); font-variant-numeric: tabular-nums;
+    }
+    .geo-stats .warn { color: var(--warn); }
+    .geo-stats .err { color: var(--err); }
+    .geo-wrap {
+      display: grid; grid-template-columns: 1fr minmax(200px, 260px); gap: 1rem;
+    }
+    @media (max-width: 900px) { .geo-wrap { grid-template-columns: 1fr; } }
+    .geo-canvas-box {
+      position: relative; background: #0a0d11; border-radius: 6px;
+      border: 1px solid var(--border); min-height: 380px;
+    }
+    .geo-canvas-box canvas { display: block; width: 100%; height: 380px; cursor: crosshair; }
+    .geo-tooltip {
+      display: none; position: absolute; pointer-events: none;
+      background: #1b2230; border: 1px solid var(--border); border-radius: 6px;
+      padding: 0.4rem 0.55rem; font-size: 0.7rem; max-width: 240px; z-index: 2;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.45);
+    }
+    .geo-side { font-size: 0.75rem; color: var(--muted); }
+    .geo-side h3 { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em;
+      color: var(--muted); margin: 0 0 0.4rem; font-weight: 600; }
+    .geo-legend { margin-bottom: 0.85rem; line-height: 1.55; }
+    .geo-legend .dot {
+      display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+      margin-right: 0.35rem; vertical-align: middle;
+    }
+    .geo-trace-legend {
+      margin-bottom: 0.75rem;
+      padding: 0.55rem 0.65rem;
+      border: 1px solid var(--trace-ue);
+      border-radius: 6px;
+      background: rgba(255, 70, 245, 0.1);
+      font-size: 0.76rem;
+      line-height: 1.45;
+    }
+    .geo-trace-legend .star {
+      color: var(--trace-ue);
+      font-size: 1.1rem;
+      margin-right: 0.25rem;
+      vertical-align: middle;
+    }
+    .geo-trace-legend b { color: var(--text); word-break: break-all; }
+    .geo-trace-legend .subline { color: var(--muted); font-size: 0.7rem; }
+    .geo-legend .row { margin-bottom: 0.2rem; }
+    .geo-anom-list { list-style: none; max-height: 200px; overflow-y: auto; }
+    .geo-anom-list li {
+      padding: 0.35rem 0; border-bottom: 1px solid var(--border);
+      font-variant-numeric: tabular-nums;
+    }
+    .geo-anom-list li:last-child { border-bottom: none; }
+    .geo-anom-list .flags { color: var(--warn); }
+    .geo-anom-list .flags.err { color: var(--err); }
+
+    /* ---- live call-flow trace ladder ---- */
+    .callflow-panel { margin-top: 1rem; }
+    .trace-head {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.5rem;
+    }
+    .trace-meta { font-size: 0.76rem; color: var(--muted); }
+    .trace-meta b { color: var(--text); font-variant-numeric: tabular-nums; }
+    .trace-meta .pill {
+      font-size: 0.64rem; border-radius: 3px; padding: 0.05rem 0.4rem; margin-left: 0.4rem;
+      border: 1px solid var(--border);
+    }
+    .trace-meta .pill.live { color: var(--ok); border-color: var(--ok); }
+    .trace-meta .pill.done { color: var(--accent); border-color: var(--accent); }
+    .btn-trace {
+      padding: 0.35rem 0.7rem; border-radius: 6px; border: 1px solid var(--border);
+      background: #0a0d11; color: var(--text); font-size: 0.75rem; cursor: pointer;
+    }
+    .btn-trace:hover { border-color: var(--accent); }
+    .header-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+    .btn-nav {
+      padding: 0.4rem 0.75rem; border-radius: 6px; border: 1px solid var(--border);
+      background: #0a0d11; color: var(--text); font-size: 0.78rem;
+      text-decoration: none; white-space: nowrap;
+    }
+    .btn-nav:hover { border-color: var(--accent); color: var(--accent); }
+    .cf-legend { font-size: 0.72rem; color: var(--muted); margin-bottom: 0.6rem; }
+    .cf-legend code { color: var(--accent); }
+    /* ---- fidelity table ---- */
+    .fidelity-panel { margin-top: 1rem; }
+    .fidelity-panel .trace-meta .ok { color: var(--ok); }
+    .fidelity-panel .trace-meta .err { color: var(--err); }
+    .fi-table { width: 100%; border-collapse: collapse; font-size: 0.74rem; }
+    .fi-table th, .fi-table td {
+      text-align: left; padding: 0.28rem 0.5rem;
+      border-bottom: 1px solid var(--border); vertical-align: top;
+    }
+    .fi-table th { color: var(--muted); font-weight: 600; font-size: 0.66rem;
+      text-transform: uppercase; letter-spacing: 0.03em; }
+    .fi-table td.mono { font-family: ui-monospace, "Cascadia Code", monospace; }
+    .fi-table .fi-status { font-weight: 600; }
+    .fi-table tr.fi-ok .fi-status { color: var(--ok); }
+    .fi-table tr.fi-diff .fi-status { color: var(--err); }
+    .fi-table tr.fi-none .fi-status { color: var(--muted); }
+    .fi-table .fi-note { color: var(--muted); font-size: 0.7rem; }
+    .trace-wrap { display: grid; grid-template-columns: 1fr minmax(300px, 360px); gap: 1rem; }
+    @media (max-width: 900px) { .trace-wrap { grid-template-columns: 1fr; } }
+
+    .ladder { overflow-x: auto; }
+    .lad-actors { position: relative; height: 44px; min-width: 460px; }
+    .lad-actor { position: absolute; transform: translateX(-50%); text-align: center; top: 0; }
+    .lad-actor .box {
+      background: #1b2230; border: 1px solid var(--border); border-radius: 6px;
+      padding: 0.25rem 0.6rem; font-size: 0.78rem; font-weight: 600; display: inline-block;
+    }
+    .lad-actor.ue .box { color: var(--ok); border-color: #2f5a45; }
+    .lad-actor .role {
+      font-size: 0.58rem; color: var(--muted); text-transform: uppercase;
+      letter-spacing: 0.03em; margin-top: 0.15rem;
+    }
+    .lad-body { position: relative; min-width: 460px; }
+    .lifeline { position: absolute; top: 0; bottom: 0; border-left: 1px dashed var(--border); }
+    .lad-row { position: relative; height: 34px; }
+    .lad-row:hover { background: rgba(255,255,255,0.02); }
+    .lad-time {
+      position: absolute; left: 0; top: 9px; font-size: 0.64rem;
+      color: var(--muted); font-variant-numeric: tabular-nums;
+    }
+    .lad-arrow { position: absolute; top: 17px; height: 0; border-top: 1.5px solid var(--c); cursor: pointer; }
+    .lad-arrow .lbl {
+      position: absolute; left: 50%; transform: translateX(-50%); top: -16px;
+      white-space: nowrap; font-size: 0.66rem; color: var(--c);
+      font-family: ui-monospace, "Cascadia Code", monospace;
+    }
+    .lad-arrow .head { position: absolute; top: -5px; width: 0; height: 0; border: 5px solid transparent; }
+    .lad-arrow.to-right .head { right: -1px; border-left-color: var(--c); }
+    .lad-arrow.to-left  .head { left: -1px; border-right-color: var(--c); }
+    .lad-arrow.rrc  { --c: #c77dff; }
+    .lad-arrow.s1ap { --c: #56c2d6; }
+    .lad-arrow.twin { --c: #8b93a7; }
+    .lad-arrow.reject { --c: var(--err); }
+    .lad-arrow.sel { border-top-width: 3px; }
+    .lad-arrow.sel .lbl { font-weight: 700; text-decoration: underline; }
+
+    .trace-detail {
+      position: sticky; top: 0.5rem; align-self: start;
+      background: #0a0d11; border: 1px solid var(--border); border-radius: 6px;
+      padding: 0.75rem; max-height: 72vh; overflow: auto;
+    }
+    .det-row { font-size: 0.74rem; margin-bottom: 0.2rem; }
+    .det-row .k { color: var(--muted); display: inline-block; min-width: 5.5rem; }
+    .det-row .v { font-family: ui-monospace, monospace; }
+    .trace-detail pre {
+      margin-top: 0.6rem; font-family: ui-monospace, "Cascadia Code", monospace;
+      font-size: 0.7rem; white-space: pre-wrap; word-break: break-word; color: var(--text);
+    }
   </style>
 </head>
 <body>
@@ -229,9 +392,12 @@
       <h1>5G RU Digital Twin</h1>
       <p class="sub">Cell capacity &amp; UE load — live from DU + simulator</p>
     </div>
-    <div class="live">
-      <span class="dot" id="liveDot"></span>
-      <span id="liveText">Connecting…</span>
+    <div class="header-actions">
+      <a class="btn-nav" href="/messages.html">Trace message catalog</a>
+      <div class="live">
+        <span class="dot" id="liveDot"></span>
+        <span id="liveText">Connecting…</span>
+      </div>
     </div>
   </header>
 
@@ -265,6 +431,33 @@
     <div id="prbBars"></div>
   </section>
 
+  <section class="panel geo-panel">
+    <div class="geo-head">
+      <div>
+        <h2>UE mobility map</h2>
+        <p class="sub" style="margin-top:0.25rem">RU sites, walk boundary, live UE positions · hover for detail</p>
+      </div>
+      <div class="geo-stats" id="geoStats">—</div>
+    </div>
+    <div class="geo-wrap">
+      <div class="geo-canvas-box" id="geoCanvasBox">
+        <canvas id="geoCanvas"></canvas>
+        <div class="geo-tooltip" id="geoTooltip"></div>
+      </div>
+      <aside class="geo-side">
+        <div class="geo-trace-legend" id="geoTraceLegend">
+          <span class="subline">Call-flow UE — waiting for attach…</span>
+        </div>
+        <h3>Legend</h3>
+        <div class="geo-legend" id="geoLegend"></div>
+        <h3>Anomalies</h3>
+        <ul class="geo-anom-list" id="geoAnomList">
+          <li class="sub">None detected</li>
+        </ul>
+      </aside>
+    </div>
+  </section>
+
   <div class="grid">
     <section class="panel">
       <h2>PRB utilization over time (per cell)</h2>
@@ -284,7 +477,46 @@
     </section>
   </div>
 
-  <footer>Polls /api/metrics every 1s · per-cell PRB pools + UE attach / handover outcomes</footer>
+  <section class="panel callflow-panel">
+    <div class="trace-head">
+      <h2 style="margin:0">Live signalling call flow — single UE</h2>
+      <button type="button" class="btn-trace" id="traceReset">Trace next UE ↻</button>
+    </div>
+    <p class="trace-meta" id="traceMeta">Waiting for a UE to attach…</p>
+    <p class="cf-legend">
+      Real messages captured at the DU for one UE.
+      <span style="color:#c77dff">RRC</span> = Uu air interface ·
+      <span style="color:#56c2d6">S1AP</span> = core ·
+      <span style="color:#8b93a7">TWIN</span> = user-plane stand-in ·
+      click an arrow to inspect the exact message.
+    </p>
+    <div class="trace-wrap">
+      <div class="ladder">
+        <div class="lad-actors" id="ladActors"></div>
+        <div class="lad-body" id="ladBody"></div>
+      </div>
+      <div class="trace-detail" id="traceDetail">
+        <div class="sub">Click a message arrow to inspect it.</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel fidelity-panel">
+    <div class="trace-head">
+      <h2 style="margin:0">Message format fidelity vs 22_decoded</h2>
+      <span class="trace-meta" id="fidelitySummary">—</span>
+    </div>
+    <p class="cf-legend">
+      Each twin message type vs the real <code>22_decoded</code> record of the same type (structure only,
+      ignoring filled values and the twin-only <code>_twin</code>/<code>txn</code> fields).
+      <span style="color:var(--ok)">ok</span> = identical ·
+      <span style="color:var(--err)">diff</span> = structural mismatch ·
+      <span style="color:var(--muted)">no-sample</span> = type not present in the capture (can't validate).
+    </p>
+    <div id="fidelityTable"></div>
+  </section>
+
+  <footer>Polls /api/metrics every 1s · PRB pools · mobility map · signalling trace</footer>
 
   <script>
     const MAX_POINTS = 120;
@@ -317,7 +549,14 @@
         scales: {
           x: chartDefaults.scales.x,
           y: { ...chartDefaults.scales.y, position: "left", max: 100, title: { display: true, text: "PRB utilization (%)", color: "#8b93a7", font: { size: 10 } } },
-          y1: { ...chartDefaults.scales.y, position: "right", title: { display: true, text: "Connected UEs", color: "#8b93a7", font: { size: 10 } }, grid: { drawOnChartArea: false } },
+          y1: {
+            ...chartDefaults.scales.y,
+            position: "right",
+            suggestedMin: 0,
+            suggestedMax: 50,
+            title: { display: true, text: "Connected UEs", color: "#8b93a7", font: { size: 10 } },
+            grid: { drawOnChartArea: false },
+          },
         },
       },
     });
@@ -378,8 +617,8 @@
       return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
     }
 
-    function aggregate(cells) {
-      return cells.reduce((a, c) => ({
+    function aggregate(cells, du) {
+      const agg = cells.reduce((a, c) => ({
         total_prbs: a.total_prbs + c.total_prbs,
         used_prbs: a.used_prbs + c.used_prbs,
         free_prbs: a.free_prbs + c.free_prbs,
@@ -388,6 +627,10 @@
         rejected: a.rejected + c.rejected_total,
         released: a.released + c.released_total,
       }), { total_prbs: 0, used_prbs: 0, free_prbs: 0, connected_ues: 0, admitted: 0, rejected: 0, released: 0 });
+      if (typeof du?.unique_connected_ues === "number") {
+        agg.connected_ues = du.unique_connected_ues;
+      }
+      return agg;
     }
 
     function renderKpis(agg, ue) {
@@ -398,8 +641,12 @@
         : "0.0";
       const items = [
         { label: "Cluster PRB util", val: utilPct + "%", cls: util > 0.9 ? "err" : util > 0.7 ? "warn" : "ok", hint: `${agg.used_prbs} / ${agg.total_prbs} PRBs` },
-        { label: "Connected UEs", val: agg.connected_ues, cls: "", hint: `Across ${ue.num_rus ?? "—"} cells` },
-        { label: "Target UEs", val: ue.num_ues_configured, cls: "", hint: `${ue.num_ues_running ?? "—"} UE tasks running` },
+        { label: "Connected UEs", val: agg.connected_ues, cls: "", hint: `DU sessions · ${ue.active ?? 0} active in sim` },
+        { label: "Target UEs", val: ue.num_ues_configured, cls: "", hint: ue.sim_mode === "replaying"
+          ? "Trace replay (then synthetic)"
+          : ue.scaling
+          ? `Scaling… ${ue.num_ues_running ?? 0} tasks running`
+          : `${ue.num_ues_running ?? "—"} UE tasks · ${ue.sim_mode ?? "synthetic"}` },
         { label: "Handovers", val: ue.handovers ?? 0, cls: "ok", hint: `${ue.ho_fail ?? 0} failed (target full)` },
         { label: "Admission reject", val: rejectRate + "%", cls: parseFloat(rejectRate) > 20 ? "warn" : "", hint: `${agg.rejected} rejected (DU)` },
         { label: "Connection errors", val: ue.conn_err, cls: ue.conn_err > 0 ? "err" : "ok", hint: "Failed to reach RU" },
@@ -431,11 +678,16 @@
     function pushHistory(ts, cells, totalConnected) {
       history.labels.push(fmtTime(ts));
       const n = history.labels.length;
-      cells.forEach((c) => {
-        if (!history.byCell[c.cell_id]) {
-          history.byCell[c.cell_id] = new Array(n - 1).fill(null);  // backfill late-joining cell
+      const idsThisTick = new Set(cells.map((c) => c.cell_id));
+      idsThisTick.forEach((id) => {
+        if (!history.byCell[id]) {
+          history.byCell[id] = new Array(n - 1).fill(null);
         }
-        history.byCell[c.cell_id].push(+(c.utilization * 100).toFixed(1));
+      });
+      Object.keys(history.byCell).forEach((id) => {
+        const cell = cells.find((c) => c.cell_id === id);
+        const val = cell ? +(cell.utilization * 100).toFixed(1) : null;
+        history.byCell[id].push(val);
       });
       history.connected.push(totalConnected);
       if (history.labels.length > MAX_POINTS) {
@@ -452,11 +704,33 @@
       tsChart.update("none");
     }
 
+    const UE_TARGET_KEY = "poc_digital_twin_ue_target";
     const ueSlider = document.getElementById("ueSlider");
     const ueCount = document.getElementById("ueCount");
     const ueApply = document.getElementById("ueApply");
     const controlStatus = document.getElementById("controlStatus");
     let controlEditing = false;
+    let applyInFlight = false;
+    let lastRestoreAttempt = 0;
+
+    function getDesiredUeTarget() {
+      const raw = sessionStorage.getItem(UE_TARGET_KEY);
+      if (raw == null || raw === "") return null;
+      const n = parseInt(raw, 10);
+      return Number.isNaN(n) ? null : n;
+    }
+
+    function setDesiredUeTarget(n) {
+      sessionStorage.setItem(UE_TARGET_KEY, String(n));
+    }
+
+    (function initDesiredFromStorage() {
+      const desired = getDesiredUeTarget();
+      if (desired != null) {
+        ueSlider.value = desired;
+        ueCount.value = desired;
+      }
+    })();
 
     ueSlider.addEventListener("input", () => {
       controlEditing = true;
@@ -483,9 +757,29 @@
       ueSlider.max = max;
       ueCount.max = max;
       if (!controlEditing) {
-        ueSlider.value = ue.num_ues_configured;
-        ueCount.value = ue.num_ues_configured;
+        const desired = getDesiredUeTarget();
+        const shown = desired != null
+          ? Math.max(desired, ue.num_ues_configured ?? 0)
+          : ue.num_ues_configured;
+        ueSlider.value = shown;
+        ueCount.value = shown;
       }
+    }
+
+    async function maybeRestoreUeTarget(ue, duFresh, ueFresh) {
+      const desired = getDesiredUeTarget();
+      if (desired == null || applyInFlight || controlEditing) return;
+      if (!duFresh || !ueFresh || ue?.scaling) return;
+      const configured = ue?.num_ues_configured ?? 0;
+      const running = ue?.num_ues_running ?? 0;
+      if (configured >= desired && running >= desired * 0.95) return;
+      const now = Date.now();
+      if (now - lastRestoreAttempt < 60000) return;
+      lastRestoreAttempt = now;
+      ueCount.value = desired;
+      controlStatus.textContent = `Simulator restarted — restoring ${desired} UEs…`;
+      controlStatus.className = "control-status";
+      await applyUeTarget();
     }
 
     async function applyUeTarget() {
@@ -496,6 +790,7 @@
         controlStatus.className = "control-status err";
         return;
       }
+      applyInFlight = true;
       ueApply.disabled = true;
       controlStatus.textContent = "Applying…";
       controlStatus.className = "control-status";
@@ -509,6 +804,7 @@
         if (!r.ok || !data.ok) {
           throw new Error(data.error || `HTTP ${r.status}`);
         }
+        setDesiredUeTarget(data.num_ues_configured);
         controlEditing = false;
         ueSlider.value = data.num_ues_configured;
         ueCount.value = data.num_ues_configured;
@@ -520,6 +816,7 @@
         controlStatus.textContent = String(e);
         controlStatus.className = "control-status err";
       } finally {
+        applyInFlight = false;
         ueApply.disabled = false;
       }
     }
@@ -529,12 +826,23 @@
       if (e.key === "Enter") applyUeTarget();
     });
 
+    let lastGoodDu = null;
+    let lastGoodUe = null;
+
     function update(payload) {
       const dot = document.getElementById("liveDot");
       const liveText = document.getElementById("liveText");
       const banner = document.getElementById("errorBanner");
+      const duFresh = payload.du_fresh === true;
+      const ueFresh = payload.ue_fresh === true;
 
-      if (!payload.ok || !payload.du?.cells?.length) {
+      if (duFresh && payload.du) lastGoodDu = payload.du;
+      if (ueFresh && payload.ue) lastGoodUe = payload.ue;
+
+      const du = duFresh ? payload.du : lastGoodDu;
+      const ue = ueFresh ? payload.ue : lastGoodUe;
+
+      if (!du?.cells?.length || !ue) {
         dot.className = "dot err";
         liveText.textContent = "Offline";
         banner.textContent = payload.error || "Waiting for DU / UE metrics…";
@@ -542,20 +850,32 @@
         return;
       }
 
-      banner.classList.remove("show");
-      dot.className = "dot ok";
-      liveText.textContent = `Live · ${fmtTime(payload.ts)}`;
+      if (!duFresh || !ueFresh) {
+        dot.className = "dot warn";
+        liveText.textContent = "Degraded";
+        banner.textContent = payload.error || "Metrics partially stale — retrying…";
+        banner.classList.add("show");
+      } else {
+        banner.classList.remove("show");
+        dot.className = "dot ok";
+        liveText.textContent = `Live · ${fmtTime(payload.ts)}`;
+      }
 
-      const cells = payload.du.cells;
-      const ue = payload.ue;
-      const agg = aggregate(cells);
+      const cells = du.cells;
+      const agg = aggregate(cells, du);
 
       syncControlFromMetrics(ue);
+      maybeRestoreUeTarget(ue, duFresh, ueFresh);
       renderKpis(agg, ue);
       renderPrbBars(cells);
 
+      const target = ue.num_ues_configured || 10;
+      tsChart.options.scales.y1.suggestedMax = Math.max(10, Math.ceil(target * 1.15));
+
       ensureSeries(cells.map((c) => c.cell_id));
-      pushHistory(payload.ts, cells, agg.connected_ues);
+      if (duFresh) {
+        pushHistory(payload.ts, cells, agg.connected_ues);
+      }
 
       prbDonut.data.labels = [...cells.map((c) => `${c.cell_id} used`), "Free"];
       prbDonut.data.datasets[0].data = [...cells.map((c) => c.used_prbs), agg.free_prbs];
@@ -567,7 +887,393 @@
 
       ueBar.data.datasets[0].data = [ue.admitted, ue.rejected, ue.dropped, ue.handovers ?? 0, ue.ho_fail ?? 0, ue.conn_err];
       ueBar.update("none");
+
+      if (payload.trace_fresh) {
+        tracedUeId = payload.trace_ue_id || null;
+        traceComplete = !!payload.trace_complete;
+        if (!payload.geo_fresh) renderTraceLegend(lastGeo);
+      }
+      if (payload.geo_fresh && payload.geo) {
+        renderGeoMap(payload.geo, payload.trace_complete);
+      }
     }
+
+    // ---- UE mobility map (canvas) ----
+    const geoCanvas = document.getElementById("geoCanvas");
+    const geoCtx = geoCanvas.getContext("2d");
+    const geoTooltip = document.getElementById("geoTooltip");
+    const geoTrails = new Map();
+    const GEO_TRAIL_LEN = 14;
+    const TRACE_UE_FILL = "#ff46f5";
+    const TRACE_UE_STROKE = "#ffffff";
+    let lastGeo = null;
+    let geoHoverUe = null;
+    let tracedUeId = null;  // same UE as Live signalling call flow panel
+    let traceComplete = false;
+
+    function drawTraceStar(ctx, sx, sy, outer) {
+      const inner = outer * 0.42;
+      const rot = -Math.PI / 2;
+      ctx.beginPath();
+      for (let i = 0; i < 5; i++) {
+        const a = rot + (i * 2 * Math.PI) / 5;
+        const b = rot + ((i + 0.5) * 2 * Math.PI) / 5;
+        ctx.lineTo(sx + Math.cos(a) * outer, sy + Math.sin(a) * outer);
+        ctx.lineTo(sx + Math.cos(b) * inner, sy + Math.sin(b) * inner);
+      }
+      ctx.closePath();
+    }
+
+    function drawTraceMarker(ctx, sx, sy) {
+      ctx.save();
+      ctx.strokeStyle = TRACE_UE_STROKE;
+      ctx.lineWidth = 2.5;
+      ctx.fillStyle = TRACE_UE_FILL;
+      drawTraceStar(ctx, sx, sy, 11);
+      ctx.fill();
+      ctx.stroke();
+      drawTraceStar(ctx, sx, sy, 16);
+      ctx.strokeStyle = "rgba(255, 70, 245, 0.55)";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.strokeStyle = TRACE_UE_STROKE;
+      ctx.lineWidth = 1;
+      const arm = 18;
+      ctx.beginPath();
+      ctx.moveTo(sx - arm, sy);
+      ctx.lineTo(sx + arm, sy);
+      ctx.moveTo(sx, sy - arm);
+      ctx.lineTo(sx, sy + arm);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function cellColorForName(name, cells) {
+      const i = (cells || []).findIndex((c) => c.name === name);
+      return cellColor(i >= 0 ? i : 0);
+    }
+
+    function resizeGeoCanvas() {
+      const box = document.getElementById("geoCanvasBox");
+      const dpr = window.devicePixelRatio || 1;
+      const w = box.clientWidth;
+      const h = 380;
+      geoCanvas.width = Math.floor(w * dpr);
+      geoCanvas.height = Math.floor(h * dpr);
+      geoCanvas.style.height = h + "px";
+      geoCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      if (lastGeo) drawGeoMap(lastGeo, w, h);
+    }
+
+    function geoTransform(geo, w, h) {
+      const pad = 32;
+      const R = geo.bounds?.max_radius_m || 1100;
+      const scale = (Math.min(w, h) / 2 - pad) / (R * 1.05);
+      const cx = w / 2;
+      const cy = h / 2;
+      const toScreen = (x, y) => [cx + x * scale, cy - y * scale];
+      const toWorld = (sx, sy) => [(sx - cx) / scale, (cy - sy) / scale];
+      return { scale, cx, cy, R, toScreen, toWorld };
+    }
+
+    function updateGeoTrails(ues) {
+      const seen = new Set();
+      (ues || []).forEach((u) => {
+        seen.add(u.id);
+        const trail = geoTrails.get(u.id) || [];
+        const last = trail[trail.length - 1];
+        if (!last || last.x !== u.x || last.y !== u.y) {
+          trail.push({ x: u.x, y: u.y });
+          if (trail.length > GEO_TRAIL_LEN) trail.shift();
+          geoTrails.set(u.id, trail);
+        }
+      });
+      geoTrails.forEach((_, id) => {
+        if (!seen.has(id)) geoTrails.delete(id);
+      });
+    }
+
+    function drawGeoMap(geo, w, h) {
+      const ctx = geoCtx;
+      const tf = geoTransform(geo, w, h);
+      const { toScreen, R, cx, cy, scale } = tf;
+      const anomSet = new Set((geo.anomalies || []).map((a) => a.id));
+      const flagMap = new Map((geo.anomalies || []).map((a) => [a.id, a.flags]));
+
+      ctx.clearRect(0, 0, w, h);
+
+      // grid
+      ctx.strokeStyle = "#1e2533";
+      ctx.lineWidth = 1;
+      const step = R > 800 ? 400 : 200;
+      for (let g = -R; g <= R; g += step) {
+        const [xLine] = toScreen(g, 0);
+        const [, yLine] = toScreen(0, g);
+        ctx.beginPath();
+        ctx.moveTo(xLine, 0);
+        ctx.lineTo(xLine, h);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(0, yLine);
+        ctx.lineTo(w, yLine);
+        ctx.stroke();
+      }
+
+      // walk boundary + start ring
+      const [bcx, bcy] = toScreen(0, 0);
+      ctx.setLineDash([6, 5]);
+      ctx.strokeStyle = "#3a4558";
+      ctx.beginPath();
+      ctx.arc(bcx, bcy, R * scale, 0, Math.PI * 2);
+      ctx.stroke();
+      const rStart = geo.bounds?.start_radius_m || 300;
+      ctx.strokeStyle = "#2a3548";
+      ctx.beginPath();
+      ctx.arc(bcx, bcy, rStart * scale, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // coverage hint (~1.3 km)
+      const cov = geo.bounds?.coverage_hint_m || 1300;
+      ctx.strokeStyle = "rgba(240,113,120,0.25)";
+      ctx.beginPath();
+      ctx.arc(bcx, bcy, cov * scale, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // handover midline (x = 0)
+      ctx.strokeStyle = "rgba(77,159,255,0.2)";
+      ctx.setLineDash([4, 6]);
+      ctx.beginPath();
+      ctx.moveTo(bcx, 8);
+      ctx.lineTo(bcx, h - 8);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // trails
+      geoTrails.forEach((trail, id) => {
+        if (trail.length < 2) return;
+        const ue = (geo.ues || []).find((u) => u.id === id);
+        const traced = tracedUeId && id === tracedUeId;
+        ctx.strokeStyle = traced ? TRACE_UE_FILL : cellColorForName(ue?.cell, geo.cells) + "55";
+        ctx.lineWidth = traced ? 3.5 : 1.5;
+        ctx.beginPath();
+        trail.forEach((p, i) => {
+          const [sx, sy] = toScreen(p.x, p.y);
+          if (i === 0) ctx.moveTo(sx, sy);
+          else ctx.lineTo(sx, sy);
+        });
+        ctx.stroke();
+      });
+
+      // RU sites
+      (geo.cells || []).forEach((cell, i) => {
+        const [sx, sy] = toScreen(cell.x, cell.y);
+        const col = cellColor(i);
+        ctx.fillStyle = col;
+        ctx.strokeStyle = "#e8eaed";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(sx, sy - 14);
+        ctx.lineTo(sx - 10, sy + 10);
+        ctx.lineTo(sx + 10, sy + 10);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = "#e8eaed";
+        ctx.font = "600 11px Segoe UI, system-ui, sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(cell.name, sx, sy + 26);
+        // soft serving footprint
+        ctx.strokeStyle = col + "33";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(sx, sy, 180 * scale, 0, Math.PI * 2);
+        ctx.stroke();
+      });
+
+      function drawUeDot(u) {
+        const [sx, sy] = toScreen(u.x, u.y);
+        const traced = tracedUeId && u.id === tracedUeId;
+        if (traced) {
+          drawTraceMarker(ctx, sx, sy);
+          return;
+        }
+        const col = cellColorForName(u.cell, geo.cells);
+        const flags = flagMap.get(u.id) || [];
+        if (anomSet.has(u.id)) {
+          ctx.strokeStyle = flags.includes("stale") ? "#f07178" : "#e5a84b";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(sx, sy, 9, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        const r = u.state === "connected" ? 3.5 : u.state === "attaching" ? 4 : 2.5;
+        if (u.state === "attaching") {
+          ctx.strokeStyle = col;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(sx, sy, r, 0, Math.PI * 2);
+          ctx.stroke();
+        } else {
+          ctx.fillStyle = u.state === "connected" ? col : "#8b93a7";
+          ctx.beginPath();
+          ctx.arc(sx, sy, r, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      const ues = geo.ues || [];
+      ues.filter((u) => !(tracedUeId && u.id === tracedUeId)).forEach(drawUeDot);
+      const tracedUe = ues.find((u) => tracedUeId && u.id === tracedUeId);
+      if (tracedUe) drawUeDot(tracedUe);
+
+      // origin
+      ctx.fillStyle = "#8b93a7";
+      ctx.beginPath();
+      ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+      ctx.fill();
+
+      if (geoHoverUe) {
+        const [sx, sy] = toScreen(geoHoverUe.x, geoHoverUe.y);
+        const traced = tracedUeId && geoHoverUe.id === tracedUeId;
+        if (traced) drawTraceMarker(ctx, sx, sy);
+        else {
+          ctx.strokeStyle = "#e8eaed";
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.arc(sx, sy, 12, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      }
+    }
+
+    function renderTraceLegend(geo) {
+      const el = document.getElementById("geoTraceLegend");
+      if (!tracedUeId) {
+        el.innerHTML = `<span class="subline">Call-flow UE — waiting for next <b>RRC connection request</b>…</span>`;
+        return;
+      }
+      const onMap = (geo?.ues || []).some((u) => u.id === tracedUeId);
+      const ue = (geo?.ues || []).find((u) => u.id === tracedUeId);
+      const status = traceComplete ? "session ended (trace frozen)" : (onMap ? "live on map" : "not on map right now");
+      el.innerHTML =
+        `<div><span class="star">★</span><b>Magenta star</b> = call-flow UE</div>`
+        + `<div style="margin-top:0.35rem"><b>${escHtml(tracedUeId)}</b></div>`
+        + `<div class="subline">${status}`
+        + (ue ? ` · ${escHtml(ue.cell || "?")} · (${ue.x}, ${ue.y}) m` : "")
+        + `</div>`;
+    }
+
+    function renderGeoMap(geo, traceDone) {
+      if (traceDone !== undefined) traceComplete = !!traceDone;
+      lastGeo = geo;
+      renderTraceLegend(geo);
+      updateGeoTrails(geo.ues || []);
+      const box = document.getElementById("geoCanvasBox");
+      const w = box.clientWidth;
+      const h = 380;
+      drawGeoMap(geo, w, h);
+
+      const c = geo.counts || {};
+      const parts = [
+        `<span><b>${c.tracked ?? 0}</b> on map</span>`,
+        `<span><b>${c.connected ?? 0}</b> connected</span>`,
+      ];
+      if (c.edge) parts.push(`<span class="warn"><b>${c.edge}</b> at boundary</span>`);
+      if (c.frozen) parts.push(`<span class="warn"><b>${c.frozen}</b> frozen</span>`);
+      if (c.stale) parts.push(`<span class="err"><b>${c.stale}</b> stale telemetry</span>`);
+      if (tracedUeId) {
+        const onMap = (geo.ues || []).some((u) => u.id === tracedUeId);
+        parts.push(`<span style="color:var(--trace-ue)">★ ${onMap ? "trace on map" : "trace off map"}</span>`);
+      }
+      document.getElementById("geoStats").innerHTML = parts.join(" · ");
+
+      const legendHtml = (geo.cells || []).map((cell, i) =>
+        `<div class="row"><span class="dot" style="background:${cellColor(i)}"></span>`
+        + `Circle = ${cell.name} @ (${cell.x}, ${cell.y}) m</div>`
+      ).join("")
+        + `<div class="row" style="margin-top:0.35rem"><span class="star">★</span> Star = call-flow UE (see box above)</div>`
+        + `<div class="row"><span class="dot" style="background:transparent;box-shadow:0 0 0 2px #e5a84b"></span> Orange ring = anomaly (frozen / edge)</div>`
+        + `<div style="margin-top:0.4rem">Dashed ring: max walk (${geo.bounds?.max_radius_m} m)</div>`
+        + `<div>Red ring: ~coverage limit (${geo.bounds?.coverage_hint_m} m)</div>`
+        + `<div>HO margin: ${geo.ho_margin_db} dB</div>`;
+      document.getElementById("geoLegend").innerHTML = legendHtml;
+
+      const list = document.getElementById("geoAnomList");
+      const anoms = geo.anomalies || [];
+      if (!anoms.length) {
+        list.innerHTML = `<li class="sub">None — UEs moving and updating</li>`;
+      } else {
+        list.innerHTML = anoms.slice(0, 24).map((a) => {
+          const cls = a.flags.includes("stale") ? "flags err" : "flags";
+          const labels = {
+            edge: "at walk boundary",
+            frozen: "not moved",
+            stale: "no position update",
+          };
+          const traceNote = tracedUeId && a.id === tracedUeId
+            ? ` <span style="color:var(--trace-ue)">(also ★ call-flow UE)</span>` : "";
+          return `<li><b>${escHtml(a.id)}</b>${traceNote} · ${escHtml(a.cell || "?")}<br/>
+            <span class="${cls}">${a.flags.map((f) => labels[f] || f).join(" · ")}</span>
+            · (${a.x}, ${a.y}) m</li>`;
+        }).join("")
+          + (anoms.length > 24 ? `<li class="sub">+ ${anoms.length - 24} more</li>` : "");
+      }
+    }
+
+    function geoPickUe(geo, sx, sy, w, h) {
+      const { toScreen, toWorld } = geoTransform(geo, w, h);
+      const [wx, wy] = toWorld(sx, sy);
+      let best = null;
+      let bestD = 12;
+      (geo.ues || []).forEach((u) => {
+        const [ux, uy] = toScreen(u.x, u.y);
+        const d = Math.hypot(ux - sx, uy - sy);
+        if (d < bestD) {
+          bestD = d;
+          best = u;
+        }
+      });
+      return best;
+    }
+
+    geoCanvas.addEventListener("mousemove", (ev) => {
+      if (!lastGeo) return;
+      const rect = geoCanvas.getBoundingClientRect();
+      const sx = ev.clientX - rect.left;
+      const sy = ev.clientY - rect.top;
+      const w = rect.width;
+      const h = rect.height;
+      const ue = geoPickUe(lastGeo, sx, sy, w, h);
+      geoHoverUe = ue;
+      drawGeoMap(lastGeo, w, h);
+      if (!ue) {
+        geoTooltip.style.display = "none";
+        return;
+      }
+      const flags = (lastGeo.anomalies || []).find((a) => a.id === ue.id)?.flags || [];
+      geoTooltip.style.display = "block";
+      geoTooltip.style.left = `${Math.min(sx + 12, w - 200)}px`;
+      geoTooltip.style.top = `${Math.max(sy - 8, 4)}px`;
+      const isTrace = tracedUeId && ue.id === tracedUeId;
+      geoTooltip.innerHTML =
+        (isTrace ? `<span style="color:var(--trace-ue)"><b>★ Call-flow trace UE</b></span><br/>` : "")
+        + `<b>${escHtml(ue.id)}</b><br/>`
+        + `${escHtml(ue.cell || "?")} · ${escHtml(ue.state)}<br/>`
+        + `(${ue.x}, ${ue.y}) m · ${ue.dist_m} m from origin<br/>`
+        + (ue.rsrp_dbm != null ? `RSRP ${ue.rsrp_dbm} dBm · SINR ${ue.sinr_dl_db} dB<br/>` : "")
+        + (flags.length ? `<span style="color:var(--warn)">${flags.join(", ")}</span>` : "");
+    });
+    geoCanvas.addEventListener("mouseleave", () => {
+      geoHoverUe = null;
+      geoTooltip.style.display = "none";
+      if (lastGeo) {
+        const box = document.getElementById("geoCanvasBox");
+        drawGeoMap(lastGeo, box.clientWidth, 380);
+      }
+    });
+    window.addEventListener("resize", resizeGeoCanvas);
+    resizeGeoCanvas();
 
     async function poll() {
       try {
@@ -577,6 +1283,190 @@
         update({ ok: false, error: String(e) });
       }
     }
+
+    // ---- live single-UE call-flow ladder ----
+    // Three lifelines; RRC/TWIN messages ride UE<->RU, S1AP messages ride RU<->DU.
+    const NODES = { UE: 20, RU: 52, DU: 84 };   // lifeline x positions (% of ladder)
+    const ROW_H = 34;
+    const escHtml = (s) => String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+
+    let traceEvents = [];
+    let traceSelected = null;
+
+    function ifaceClass(iface) {
+      if (!iface) return "twin";
+      if (iface.startsWith("S1")) return "s1ap";
+      if (iface.startsWith("RRC")) return "rrc";
+      return "twin";
+    }
+
+    // (src, dst) lifelines for an event from its interface + direction.
+    function endpoints(ev) {
+      const core = (ev.interface || "").startsWith("S1");
+      const up = ev.dir === "up";
+      if (core) return up ? ["RU", "DU"] : ["DU", "RU"];   // S1AP: radio <-> core
+      return up ? ["UE", "RU"] : ["RU", "UE"];             // RRC/TWIN: UE <-> radio
+    }
+
+    function fmtMs(ts) {
+      const d = new Date(ts * 1000);
+      const hh = String(d.getHours()).padStart(2, "0");
+      const mm = String(d.getMinutes()).padStart(2, "0");
+      const ss = String(d.getSeconds()).padStart(2, "0");
+      const ms = String(d.getMilliseconds()).padStart(3, "0");
+      return `${hh}:${mm}:${ss}.${ms}`;
+    }
+
+    function renderActors() {
+      const actors = [
+        { id: "UE", role: "device", cls: "ue" },
+        { id: "RU", role: "radio · Uu", cls: "" },
+        { id: "DU", role: "core · F1", cls: "" },
+      ];
+      document.getElementById("ladActors").innerHTML = actors.map((a) => `
+        <div class="lad-actor ${a.cls}" style="left:${NODES[a.id]}%">
+          <div class="box">${a.id}</div><div class="role">${a.role}</div>
+        </div>`).join("");
+    }
+
+    function renderLadder() {
+      const body = document.getElementById("ladBody");
+      body.style.height = Math.max(1, traceEvents.length) * ROW_H + "px";
+      const lifelines = Object.values(NODES)
+        .map((x) => `<div class="lifeline" style="left:${x}%"></div>`).join("");
+      const rows = traceEvents.map((ev, i) => {
+        const [src, dst] = endpoints(ev);
+        const x1 = NODES[src], x2 = NODES[dst];
+        const left = Math.min(x1, x2), width = Math.abs(x2 - x1);
+        const dir = x2 > x1 ? "to-right" : "to-left";
+        const cls = ev.reject ? "reject" : ifaceClass(ev.interface);
+        const sel = i === traceSelected ? " sel" : "";
+        return `
+          <div class="lad-row" style="top:${i * ROW_H}px">
+            <span class="lad-time">${fmtMs(ev.t)}</span>
+            <div class="lad-arrow ${cls} ${dir}${sel}" data-i="${i}"
+                 style="left:${left}%;width:${width}%">
+              <span class="lbl">${escHtml(ev.name || "?")}</span>
+              <span class="head"></span>
+            </div>
+          </div>`;
+      }).join("");
+      body.innerHTML = lifelines + rows;
+      body.querySelectorAll(".lad-arrow").forEach((el) => {
+        el.addEventListener("click", () => selectEvent(+el.dataset.i));
+      });
+    }
+
+    function selectEvent(i) {
+      traceSelected = i;
+      renderLadder();
+      renderDetail(traceEvents[i]);
+    }
+
+    function renderDetail(ev) {
+      const el = document.getElementById("traceDetail");
+      if (!ev) { el.innerHTML = `<div class="sub">Click a message arrow to inspect it.</div>`; return; }
+      const row = (k, v) => `<div class="det-row"><span class="k">${k}</span><span class="v">${escHtml(v)}</span></div>`;
+      el.innerHTML =
+        row("message", ev.name) +
+        row("interface", ev.interface || "—") +
+        row("direction", ev.dir === "up" ? "uplink (UE→net)" : "downlink (net→UE)") +
+        row("step", ev.step || "—") +
+        row("action", ev.action || "none") +
+        row("time", fmtMs(ev.t)) +
+        `<pre>${escHtml(JSON.stringify(ev.message, null, 2))}</pre>`;
+    }
+
+    function renderTraceMeta(data) {
+      const meta = document.getElementById("traceMeta");
+      if (!data || data.error) {
+        meta.innerHTML = `<span class="sub">Trace unavailable: ${escHtml(data?.error || "no data")}</span>`;
+        return;
+      }
+      if (!data.ue_id) {
+        meta.innerHTML = `Waiting for a UE to attach…`;
+        return;
+      }
+      const pill = data.complete
+        ? `<span class="pill done">complete</span>`
+        : `<span class="pill live">capturing…</span>`;
+      meta.innerHTML = `Tracing UE <b>${escHtml(data.ue_id)}</b> · <b>${data.count}</b> messages ${pill}`;
+    }
+
+    async function loadTrace() {
+      let data;
+      try {
+        const r = await fetch("/api/trace");
+        data = await r.json();
+      } catch (e) {
+        data = { error: String(e) };
+      }
+      renderTraceMeta(data);
+      tracedUeId = (data && data.ue_id) || null;
+      traceComplete = !!(data && data.complete);
+      traceEvents = (data && data.events) || [];
+      if (traceSelected != null && traceSelected >= traceEvents.length) traceSelected = null;
+      renderLadder();
+      renderDetail(traceSelected != null ? traceEvents[traceSelected] : null);
+      if (lastGeo) renderGeoMap(lastGeo, traceComplete);
+      else renderTraceLegend(null);
+    }
+
+    document.getElementById("traceReset").addEventListener("click", async () => {
+      try { await fetch("/api/trace/reset"); } catch (e) { /* ignore */ }
+      traceSelected = null;
+      tracedUeId = null;
+      traceComplete = false;
+      loadTrace();
+      if (lastGeo) renderGeoMap(lastGeo, false);
+      else renderTraceLegend(null);
+    });
+
+    renderActors();
+    loadTrace();
+    setInterval(loadTrace, 1500);
+
+    // ---- message format fidelity vs 22_decoded (static; refreshed occasionally) ----
+    function renderFidelity(rep) {
+      const summary = document.getElementById("fidelitySummary");
+      const tbl = document.getElementById("fidelityTable");
+      if (!rep || rep.error) {
+        summary.innerHTML = `<span class="err">${rep?.error || "unavailable"}</span>`;
+        tbl.innerHTML = "";
+        return;
+      }
+      summary.innerHTML =
+        `<b class="ok">${rep.ok}</b> identical · `
+        + `<b class="${rep.diff ? "err" : ""}">${rep.diff}</b> diff · `
+        + `<b>${rep.no_sample}</b> no sample · ${rep.total} types`;
+      const cls = (s) => s === "ok" ? "fi-ok" : s === "diff" ? "fi-diff" : "fi-none";
+      const rows = rep.rows.map((r) => {
+        const note = r.status === "diff"
+          ? `extra: ${(r.extra_fields || []).join(", ") || "—"}; missing: ${(r.missing_fields || []).join(", ") || "—"}${r.decoded_match === false ? "; decoded body differs" : ""}`
+          : r.status === "no-sample" ? "not present in 22_decoded" : "";
+        return `<tr class="${cls(r.status)}">`
+          + `<td>${r.record_id ?? "—"}</td>`
+          + `<td class="mono">${r.message_name}</td>`
+          + `<td>${r.interface || ""}</td>`
+          + `<td class="fi-status">${r.status}</td>`
+          + `<td class="fi-note">${note}</td></tr>`;
+      }).join("");
+      tbl.innerHTML =
+        `<table class="fi-table"><thead><tr>`
+        + `<th>record_id</th><th>message_name</th><th>iface</th><th>fidelity</th><th>notes</th>`
+        + `</tr></thead><tbody>${rows}</tbody></table>`;
+    }
+
+    async function loadFidelity() {
+      try {
+        const r = await fetch("/api/fidelity");
+        renderFidelity(await r.json());
+      } catch (e) {
+        renderFidelity({ error: String(e) });
+      }
+    }
+    loadFidelity();
+    setInterval(loadFidelity, 15000);
 
     poll();
     setInterval(poll, 1000);
