@@ -1,6 +1,8 @@
 # 5G RU Digital Twin - capacity / load PoC
-#   2-RU cluster (cell-1 @ -600m, cell-2 @ +600m) on a shared DU. UEs roam across
-#   the midline and hand over to the stronger RU (A3 hysteresis, HO_MARGIN_DB).
+#   3 RU sites (towers) located apart in a triangle, each a 3-sector macro eNB
+#   (3 × 120° fan cells, 250 PRB/cell) on a shared DU = 9 cells total.
+#   ru @ (0,600), ru2 @ (-520,-300), ru3 @ (520,-300); UEs roam the cluster and hand
+#   over both between sectors of a site and between sites (HO_MARGIN_DB).
 #
 #   docker compose up --build                      # 1 UE (NUM_UES=1)
 #   NUM_UES=2000 docker compose up --build         # bash: 2000 UEs in ONE container
@@ -23,7 +25,7 @@ services:
     container_name: du
     restart: unless-stopped
     environment:
-      TOTAL_PRBS: "273"        # 100 MHz @ 30 kHz SCS = 273 PRBs per cell
+      TOTAL_PRBS: "250"        # fixed 250 PRBs per sector cell (9 cells total)
       SCS_KHZ: "30"
       MONITOR_INTERVAL: "5"
       TRAFFIC_PROFILE: "voip"  # 1–2 PRBs per voice session (see common/rf_model.py)
@@ -35,9 +37,9 @@ services:
       - "9080:8080"   # 9080 on host: 8080 is often in Windows excludedportrange
     networks: [ran]
 
-  # Two RUs form a small cluster, placed left/right of the origin so UEs roaming
-  # across the midline trigger inter-RU handovers. Each RU is its own cell with
-  # its own PRB pool on the shared DU.
+  # Three RU sites (towers) located apart. Each RU container is one macro eNB serving
+  # 3 sector cells (120° fans @ 60/180/300°, oriented so each site covers the cluster
+  # interior). Each sector cell owns its own 250-PRB pool on the shared DU.
   ru:
     build:
       context: .
@@ -48,18 +50,23 @@ services:
     environment:
       DU_HOST: du
       DU_PORT: "38472"
-      CELL_ID: cell-1
+      SITE_ID: RU1
+      RU_TYPE: macro-3-sector-O-RU
       FREQ_GHZ: "3.5"
       BANDWIDTH_MHZ: "100"
+      CELL_TOTAL_PRBS: "250"
       TX_POWER_DBM: "49"
       TX_GAIN_DB: "15"
-      RU_X: "-600"             # cluster geometry: cell-1 sits left of origin
-      RU_Y: "0"
+      RU_X: "0"
+      RU_Y: "600"
+      RU_STATE_PATH: /trace/data/ru_state/RU1.json
+      SECTORS: >-
+        [{"cell":"RU1-A","azimuth":60},{"cell":"RU1-B","azimuth":180},{"cell":"RU1-C","azimuth":300}]
       RADIO_TECH: "lte"
       LTE_TEMPLATES: "/trace/data/lte_templates.json"
     volumes:
-      - ./data:/trace/data:ro
-    ulimits:                   # one socket per UE -> raise the fd limit
+      - ./data:/trace/data
+    ulimits:
       nofile:
         soft: 65536
         hard: 65536
@@ -75,17 +82,54 @@ services:
     environment:
       DU_HOST: du
       DU_PORT: "38472"
-      CELL_ID: cell-2
+      SITE_ID: RU2
+      RU_TYPE: macro-3-sector-O-RU
       FREQ_GHZ: "3.5"
       BANDWIDTH_MHZ: "100"
+      CELL_TOTAL_PRBS: "250"
       TX_POWER_DBM: "49"
       TX_GAIN_DB: "15"
-      RU_X: "600"             # cluster geometry: cell-2 sits right of origin
-      RU_Y: "0"
+      RU_X: "-520"
+      RU_Y: "-300"
+      RU_STATE_PATH: /trace/data/ru_state/RU2.json
+      SECTORS: >-
+        [{"cell":"RU2-A","azimuth":60},{"cell":"RU2-B","azimuth":180},{"cell":"RU2-C","azimuth":300}]
       RADIO_TECH: "lte"
       LTE_TEMPLATES: "/trace/data/lte_templates.json"
     volumes:
-      - ./data:/trace/data:ro
+      - ./data:/trace/data
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    networks: [ran]
+
+  ru3:
+    build:
+      context: .
+      dockerfile: ru/Dockerfile
+    container_name: ru3
+    restart: unless-stopped
+    depends_on: [du]
+    environment:
+      DU_HOST: du
+      DU_PORT: "38472"
+      SITE_ID: RU3
+      RU_TYPE: macro-3-sector-O-RU
+      FREQ_GHZ: "3.5"
+      BANDWIDTH_MHZ: "100"
+      CELL_TOTAL_PRBS: "250"
+      TX_POWER_DBM: "49"
+      TX_GAIN_DB: "15"
+      RU_X: "520"
+      RU_Y: "-300"
+      RU_STATE_PATH: /trace/data/ru_state/RU3.json
+      SECTORS: >-
+        [{"cell":"RU3-A","azimuth":60},{"cell":"RU3-B","azimuth":180},{"cell":"RU3-C","azimuth":300}]
+      RADIO_TECH: "lte"
+      LTE_TEMPLATES: "/trace/data/lte_templates.json"
+    volumes:
+      - ./data:/trace/data
     ulimits:
       nofile:
         soft: 65536
@@ -98,13 +142,16 @@ services:
       context: .
       dockerfile: ue/Dockerfile
     restart: unless-stopped
-    depends_on: [ru, ru2]
+    depends_on: [ru, ru2, ru3]
     environment:
-      # RU cluster the UEs can see + hand over between (positions must match the
-      # RU_X/RU_Y above so the UE's RSRP estimate matches what the RU computes).
+      # 3 RU sites apart, each a 3-sector macro (cells share the site host/port + coords).
       RU_LIST: >-
-        [{"name":"cell-1","host":"ru","port":38470,"x":-600,"y":0},
-         {"name":"cell-2","host":"ru2","port":38470,"x":600,"y":0}]
+        [{"name":"RU1","host":"ru","port":38470,"x":0,"y":600,
+          "sectors":[{"cell":"RU1-A","azimuth":60},{"cell":"RU1-B","azimuth":180},{"cell":"RU1-C","azimuth":300}]},
+         {"name":"RU2","host":"ru2","port":38470,"x":-520,"y":-300,
+          "sectors":[{"cell":"RU2-A","azimuth":60},{"cell":"RU2-B","azimuth":180},{"cell":"RU2-C","azimuth":300}]},
+         {"name":"RU3","host":"ru3","port":38470,"x":520,"y":-300,
+          "sectors":[{"cell":"RU3-A","azimuth":60},{"cell":"RU3-B","azimuth":180},{"cell":"RU3-C","azimuth":300}]}]
       HO_MARGIN_DB: "3"         # A3 hysteresis: neighbour must beat serving by 3 dB
       RADIO_TECH: "lte"         # realistic LTE (RRC/S1AP) signalling; nr reserved for 5G
       LTE_TEMPLATES: "/trace/data/lte_templates.json"  # real templates (built by scripts/build_message_templates.py)
@@ -127,8 +174,8 @@ services:
       UE_TX_POWERS_DBM: "20,23,26"
       SPEED_MIN_MPS: "1"
       SPEED_MAX_MPS: "30"
-      MAX_RADIUS_M: "1300"      # roam wide enough to cross both cells' coverage
-      START_RADIUS_M: "500"
+      MAX_RADIUS_M: "1200"      # roam the well-covered interior of the 3-site cluster
+      START_RADIUS_M: "450"     # per-site spawn radius (UEs spawn around a random RU site)
       SESSION_DURATION: "45"    # 0 = stay connected forever
       IDLE_BETWEEN: "5"
       STATS_INTERVAL: "5"
@@ -147,13 +194,15 @@ services:
       dockerfile: dashboard/Dockerfile
     container_name: dashboard
     restart: unless-stopped
-    depends_on: [du, ue-sim]
+    depends_on: [du, ue-sim, ru, ru2, ru3]
     environment:
       DU_STATUS_URL: http://du:8080/status
       DU_TRACE_URL: http://du:8080/trace
       UE_STATUS_URL: http://ue-sim:8081/status
       UE_CONTROL_URL: http://ue-sim:8081/control
       UE_GEO_URL: http://ue-sim:8081/geo
+      RU_STATE_DIR: /trace/data/ru_state
+      RU_DICTIONARY_URLS: http://ru:8082/dictionary,http://ru2:8082/dictionary,http://ru3:8082/dictionary
       RECORD_ID_MESSAGES: /app/CallFlow/record-id-messages.txt
       TRACE_DECODED_DIR: /trace/raw
       TRACE_SAMPLES_CACHE: /trace/data/trace_message_samples.json

@@ -1,6 +1,6 @@
 # 5G RU Digital Twin — Stress Test PoC
 
-Software digital twin of a small 5G cluster: **DU** (scheduler / PRB admission), two **RUs** (cells), and a **UE simulator** (many UEs as async tasks in one process). Optional **dashboard** for live metrics and UE count control.
+Software digital twin of a small 5G cluster: **DU** (scheduler / PRB admission), three **RU sites** located apart — each a tower with **3 fan-shaped sector cells** (120°, 250 PRB each = 9 cells) — and a **UE simulator** (many UEs as async tasks in one process). Optional **dashboard** for live metrics, the RU/UE mobility map, and UE count control.
 
 Traffic defaults to **VoIP-style** load: **1–2 PRBs per voice session** on the DU.
 
@@ -27,7 +27,7 @@ You should see both **Client** and **Server** sections.
 | Path | Purpose |
 |------|---------|
 | `du/` | Distributed Unit — PRB pools per cell, admission control |
-| `ru/` | Radio Unit server (used for `ru` and `ru2` containers) |
+| `ru/` | Radio Unit server (one container per sector: `ru`, `ru2`, `ru3`) |
 | `ue/` | UE simulator (synthetic or call-trace replay) |
 | `common/` | Protocol, RF model, call-trace parsing |
 | `dashboard/` | Web UI on port **9090** |
@@ -40,7 +40,7 @@ You should see both **Client** and **Server** sections.
 
 ## Run the stack (synthetic mode — default)
 
-Synthetic UEs: random mobility, attach / measurement / release on timers, handover between two RUs. **No call-trace files required.**
+Synthetic UEs: random mobility, attach / measurement / release on timers, handover between sectors and between the 3 RU sites. **No call-trace files required.**
 
 ```powershell
 cd path\to\poc_StressTest
@@ -53,7 +53,7 @@ Check services:
 docker compose ps
 ```
 
-Expected: `du`, `ru`, `ru2`, `ue-sim`, `dashboard` — all **Up**.
+Expected: `du`, `ru`, `ru2`, `ru3`, `ue-sim`, `dashboard` — all **Up**.
 
 | URL | What |
 |-----|------|
@@ -111,7 +111,7 @@ $env:PYTHONPATH = (Get-Location).Path
 python scripts/build_message_templates.py --max-files 8 --out data/lte_templates.json
 ```
 
-The compose file mounts `./data` into `du`, `ru`, `ru2`, `ue-sim` and points
+The compose file mounts `./data` into `du`, `ru`, `ru2`, `ru3`, `ue-sim` and points
 `LTE_TEMPLATES` at `data/lte_templates.json`; a missing file simply falls back to the
 built-in defaults. Run the signalling/flow tests with `python -m pytest tests/`.
 

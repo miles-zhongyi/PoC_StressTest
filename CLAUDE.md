@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A software digital twin of a small 5G cluster for capacity/load stress testing: a **DU** (scheduler, owns the PRB pool, does admission control), two **RUs** (radio units / cells), and a **UE simulator** that runs thousands of UEs as asyncio tasks in one process. There is no real radio or ASN.1 — message *names* mirror RRC/F1AP procedures but payloads are a simplified JSON wire protocol.
+A software digital twin of a small 5G cluster for capacity/load stress testing: a **DU** (scheduler, owns the per-cell PRB pools, does admission control), three **RU sites** located apart — each a macro tower serving **3 sector cells** (120° fans, 250 PRB each = 9 cells total) — and a **UE simulator** that runs thousands of UEs as asyncio tasks in one process. There is no real radio or ASN.1 — message *names* mirror RRC/F1AP procedures but payloads are a simplified JSON wire protocol.
 
 ## Commands
 
@@ -18,7 +18,7 @@ docker compose up -d --build
 $env:NUM_UES = "500"; docker compose up -d --build
 .\scripts\run_stress.ps1 -NumUes 500 -Detach   # helper wrapper
 
-docker compose ps                 # expect du, ru, ru2, ue-sim, dashboard = Up
+docker compose ps                 # expect du, ru, ru2, ru3, ue-sim, dashboard = Up
 docker compose logs -f du         # watch PRB utilisation bars
 docker compose logs -f ue-sim     # watch UE attach/handover stats
 docker compose down
@@ -84,9 +84,9 @@ The wire messages are **realistic LTE signalling** (RRC + S1AP names/structures)
 
 ### Handover
 
-The UE decides handover (A3-style hysteresis) in `one_session()`. It estimates RSRP from every RU using the **same path-loss model the RU uses** (`rsrp_from`, mirroring `rf_model`), so its decision matches RU reality. It only hands over when a neighbour beats the serving RU by `HO_MARGIN_DB` (default 3 dB), preventing ping-pong. Handover is **make-before-break**: the UE walks the full attach flow (`_attach`) on the target RU first, and only releases the source after the target admits it. The DU's `handle_setup` (run at the context-setup step) calls `_release_ue_other_cells` to avoid double-counting a UE on two cells during the overlap.
+The UE owns sector/cell selection and handover (A3-style hysteresis) in `one_session()`. `_parse_rus()` flattens the `RU_LIST` of **sites** into per-sector links (one per cell); the UE estimates RSRP for *every sector of every site* using the **same sector path-loss model the RU uses** (`rsrp_from` / `link_rf`) and attaches to the strongest. It hands over (make-before-break: `_attach` on the new cell, then release the old) when the best cell changes and beats the serving cell by `HO_MARGIN_DB` (default 3 dB) — this covers both **inter-sector** (same site) and **inter-site** handovers. The DU's `handle_setup` calls `_release_ue_other_cells` to avoid double-counting a UE on two cells during the overlap.
 
-The two RUs are placed left/right of the origin (`RU_X` = −600 / +600 in compose) so UEs roaming across the midline trigger handovers.
+The default compose stack is a **3-RU cluster located apart**: `ru`/`ru2`/`ru3` (`RU1`/`RU2`/`RU3`) in a triangle (`(0,600)`, `(-520,-300)`, `(520,-300)`). Each RU container is one macro site serving **3 sector cells** (120° fans @ 60/180/300°, configured via the `SECTORS` env JSON `[{cell,azimuth},…]`), so there are **9 cells** total, each a fixed **250 PRB** pool on the DU. The RU computes RF for whichever of its sectors the UE says it is on (`_twin.cell`); the UE drives the choice.
 
 ### RF + capacity model ([common/rf_model.py](common/rf_model.py))
 

@@ -28,6 +28,13 @@ DU_TRACE_URL = os.environ.get("DU_TRACE_URL", "http://du:8080/trace")
 UE_URL = os.environ.get("UE_STATUS_URL", "http://ue-sim:8081/status")
 UE_GEO_URL = os.environ.get("UE_GEO_URL", "http://ue-sim:8081/geo")
 UE_CONTROL_URL = os.environ.get("UE_CONTROL_URL", "http://ue-sim:8081/control")
+RU_STATE_DIR = Path(os.environ.get("RU_STATE_DIR", "/trace/data/ru_state"))
+RU_DICTIONARY_URLS = [
+    u.strip() for u in os.environ.get(
+        "RU_DICTIONARY_URLS",
+        "http://ru:8082/dictionary,http://ru2:8082/dictionary,http://ru3:8082/dictionary",
+    ).split(",") if u.strip()
+]
 PORT = int(os.environ.get("DASHBOARD_PORT", "9090"))
 POLL_SEC = float(os.environ.get("POLL_INTERVAL", "1"))
 STATIC = Path(__file__).resolve().parent / "static"
@@ -91,6 +98,48 @@ def _enrich_live_trace(data: dict) -> dict:
     out["events"] = events
     out["template_tokens"] = list(TEMPLATE_TOKENS)
     return out
+
+
+def _load_ru_dict_from_file(path: Path) -> dict | None:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(data, dict) and data.get("site_id"):
+            data["_source"] = "file"
+            data["_path"] = str(path.name)
+            return data
+    except (OSError, json.JSONDecodeError):
+        pass
+    return None
+
+
+def fetch_ru_dictionaries(site_filter: str | None = None) -> dict:
+    """Live RU dictionaries from HTTP (preferred) with file fallback."""
+    by_site: dict[str, dict] = {}
+    errors: list[str] = []
+
+    for url in RU_DICTIONARY_URLS:
+        try:
+            doc = _fetch(url, timeout=3)
+            sid = doc.get("site_id")
+            if sid:
+                doc["_source"] = "live"
+                doc["_url"] = url
+                by_site[sid] = doc
+        except (URLError, OSError, json.JSONDecodeError, TimeoutError) as exc:
+            errors.append(f"{url}: {exc}")
+
+    if RU_STATE_DIR.is_dir():
+        for path in sorted(RU_STATE_DIR.glob("*.json")):
+            if path.name.endswith(".example.json"):
+                continue
+            doc = _load_ru_dict_from_file(path)
+            if doc and doc["site_id"] not in by_site:
+                by_site[doc["site_id"]] = doc
+
+    sites = sorted(by_site.values(), key=lambda d: d.get("site_id", ""))
+    if site_filter:
+        sites = [s for s in sites if s.get("site_id") == site_filter]
+    return {"ts": time.time(), "sites": sites, "errors": errors}
 
 
 def _poll_loop():
@@ -246,6 +295,16 @@ class Handler(BaseHTTPRequestHandler):
                 }), "application/json")
                 return
             self._send(200, json.dumps(sample), "application/json")
+            return
+        if path == "/api/ru-dictionary":
+            from urllib.parse import parse_qs, urlparse
+            qs = parse_qs(urlparse(self.path).query)
+            site = (qs.get("site") or [None])[0]
+            try:
+                payload = fetch_ru_dictionaries(site)
+                self._send(200, json.dumps(payload), "application/json")
+            except Exception as exc:
+                self._send(500, json.dumps({"error": str(exc)}), "application/json")
             return
         if path in ("", "/"):
             path = "/index.html"

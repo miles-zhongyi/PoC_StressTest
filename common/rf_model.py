@@ -148,3 +148,92 @@ def prbs_for_traffic(demand_mbps, sinr, scs_khz=30, profile="voip"):
 def mcs_from_se(se):
     """Rough mapping of spectral efficiency onto an MCS index (0..27) for display."""
     return max(0, min(27, round(se / MAX_SE * 27)))
+
+
+# ---- sector antenna (macro eNB: 3 × 120°) ---------------------------------
+SECTOR_WIDTH_DEG = 120.0
+SECTOR_EDGE_LOSS_DB = 18.0   # rolloff at ±60° from boresight
+NO_COVERAGE_GAIN_DB = -999.0
+
+
+def bearing_from_north_deg(dx, dy):
+    """Azimuth from site to UE: 0° = north (+y), 90° = east (+x), clockwise."""
+    return (math.degrees(math.atan2(dx, dy)) + 360.0) % 360.0
+
+
+def angular_diff_deg(bearing_deg, azimuth_deg):
+    """Signed shortest angle between bearing and sector boresight (-180..180)."""
+    return (bearing_deg - azimuth_deg + 180.0) % 360.0 - 180.0
+
+
+def in_sector(bearing_deg, azimuth_deg, sector_width_deg=SECTOR_WIDTH_DEG):
+    return abs(angular_diff_deg(bearing_deg, azimuth_deg)) <= sector_width_deg / 2.0
+
+
+def sector_antenna_gain_db(
+    bearing_deg,
+    azimuth_deg,
+    sector_width_deg=SECTOR_WIDTH_DEG,
+    edge_loss_db=SECTOR_EDGE_LOSS_DB,
+):
+    """Antenna gain relative to boresight; NO_COVERAGE_GAIN_DB outside the sector."""
+    half = sector_width_deg / 2.0
+    diff = abs(angular_diff_deg(bearing_deg, azimuth_deg))
+    if diff > half:
+        return NO_COVERAGE_GAIN_DB
+    t = diff / half if half > 0 else 0.0
+    return -edge_loss_db * (t * t)
+
+
+def link_rf(
+    ue_pos,
+    site_x,
+    site_y,
+    tx_power_dbm,
+    freq_ghz,
+    bandwidth_hz,
+    *,
+    tx_gain_db=15.0,
+    ue_tx_power_dbm=23.0,
+    azimuth_deg=None,
+    sector_width_deg=SECTOR_WIDTH_DEG,
+):
+    """
+    DL/UL RF snapshot for a UE relative to one RU site.
+
+    When `azimuth_deg` is set the link uses a 120° sector pattern; otherwise
+    omnidirectional (legacy single-RU setups).
+    """
+    dx = ue_pos["x"] - site_x
+    dy = ue_pos["y"] - site_y
+    distance = max(1.0, math.hypot(dx, dy))
+    bearing = bearing_from_north_deg(dx, dy)
+    ant_extra = 0.0
+    in_cov = True
+    if azimuth_deg is not None:
+        ant_extra = sector_antenna_gain_db(bearing, azimuth_deg, sector_width_deg)
+        if ant_extra <= NO_COVERAGE_GAIN_DB / 2:
+            in_cov = False
+            return {
+                "distance_m": round(distance, 1),
+                "bearing_deg": round(bearing, 1),
+                "in_sector": False,
+                "rsrp_dl_dbm": -140.0,
+                "sinr_dl_db": MIN_SINR_DB - 10.0,
+                "sinr_ul_db": MIN_SINR_DB - 10.0,
+            }
+    rsrp = rsrp_dbm(tx_power_dbm, distance, freq_ghz, tx_gain_db) + ant_extra
+    sinr_dl = sinr_db(tx_power_dbm, distance, freq_ghz, bandwidth_hz, tx_gain_db=tx_gain_db) + ant_extra
+    sinr_ul = sinr_db(
+        ue_tx_power_dbm, distance, freq_ghz, bandwidth_hz,
+        tx_gain_db=0.0, rx_gain_db=tx_gain_db,
+    ) + ant_extra
+    return {
+        "distance_m": round(distance, 1),
+        "bearing_deg": round(bearing, 1),
+        "in_sector": in_cov,
+        "sector_gain_db": round(ant_extra, 2),
+        "rsrp_dl_dbm": round(rsrp, 1),
+        "sinr_dl_db": round(sinr_dl, 1),
+        "sinr_ul_db": round(sinr_ul, 1),
+    }

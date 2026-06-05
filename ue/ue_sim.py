@@ -73,39 +73,58 @@ HO_MARGIN_DB = float(os.environ.get("HO_MARGIN_DB", "3"))
 
 
 def _parse_rus():
-    """Build the RU cluster the UEs can attach to.
+    """Flatten the RU cluster into per-sector links the UE can attach to.
 
-    RU_LIST is a JSON array of {name, host, port, x, y, [tx_power_dbm, freq_ghz,
-    tx_gain_db]}. Falls back to a single RU at the origin from RU_HOST/RU_PORT so
-    the old single-cell setup keeps working unchanged.
+    RU_LIST is a JSON array of RU **sites**: {name, host, port, x, y, sectors:[{cell,
+    azimuth}, ...]} — one container per site, each serving 3 fan-shaped cells (120°).
+    Each sector becomes a link whose `name` is its cell id (the DU pool key); all
+    sectors of a site share host/port/x/y. A legacy single-sector entry
+    ({name, host, port, x, y, [azimuth_deg]}) still works (one link). Falls back to a
+    single omni RU at the origin when RU_LIST is unset.
     """
     raw = os.environ.get("RU_LIST", "").strip()
     items = json.loads(raw) if raw else [
         {"name": os.environ.get("CELL_ID", "cell-1"), "host": RU_HOST, "port": RU_PORT, "x": 0.0, "y": 0.0}
     ]
-    rus = []
+    links = []
     for it in items:
-        rus.append({
-            "name": it.get("name", f"{it['host']}:{it['port']}"),
-            "host": it["host"],
-            "port": int(it["port"]),
-            "x": float(it.get("x", 0.0)),
-            "y": float(it.get("y", 0.0)),
+        host, port = it["host"], int(it["port"])
+        x, y = float(it.get("x", 0.0)), float(it.get("y", 0.0))
+        site = it.get("name", f"{host}:{port}")
+        common = {
+            "site": site, "host": host, "port": port, "x": x, "y": y,
+            "sector_width_deg": float(it.get("sector_width_deg", 120)),
             "tx_power_dbm": float(it.get("tx_power_dbm", DEFAULT_TX_POWER_DBM)),
             "freq_ghz": float(it.get("freq_ghz", DEFAULT_FREQ_GHZ)),
             "tx_gain_db": float(it.get("tx_gain_db", DEFAULT_TX_GAIN_DB)),
-        })
-    return rus
+        }
+        sectors = it.get("sectors")
+        if sectors:                                  # a 3-sector macro site
+            for s in sectors:
+                az = s.get("azimuth", s.get("azimuth_deg"))
+                links.append({**common, "name": s["cell"],
+                              "azimuth_deg": float(az) if az is not None else None})
+        else:                                        # legacy single sector / omni
+            az = it.get("azimuth_deg", it.get("azimuth"))
+            links.append({**common, "name": site,
+                          "azimuth_deg": float(az) if az is not None else None})
+    return links
 
 
 RUS = _parse_rus()
+SITES = {r["site"]: {"name": r["site"], "x": r["x"], "y": r["y"]} for r in RUS}
 
 
 def rsrp_from(ru, pos):
     """Estimated RSRP (dBm) the UE would see from `ru` at `pos` — same path-loss
-    model the RU itself uses, so the UE's handover decision matches RU reality."""
-    d = max(1.0, math.hypot(pos["x"] - ru["x"], pos["y"] - ru["y"]))
-    return rf.rsrp_dbm(ru["tx_power_dbm"], d, ru["freq_ghz"], ru["tx_gain_db"])
+    and sector pattern the RU uses, so the UE's handover decision matches RU reality."""
+    snap = rf.link_rf(
+        pos, ru["x"], ru["y"], ru["tx_power_dbm"], ru["freq_ghz"], _BANDWIDTH_HZ,
+        tx_gain_db=ru["tx_gain_db"],
+        azimuth_deg=ru.get("azimuth_deg"),
+        sector_width_deg=ru.get("sector_width_deg", 120),
+    )
+    return snap["rsrp_dl_dbm"]
 
 
 def best_ru(pos):
@@ -139,13 +158,15 @@ GEO_MOVE_EPS_M = float(os.environ.get("GEO_MOVE_EPS_M", "3"))
 
 
 def _ue_rf(serving, pos):
-    d = max(1.0, math.hypot(pos["x"] - serving["x"], pos["y"] - serving["y"]))
+    snap = rf.link_rf(
+        pos, serving["x"], serving["y"], serving["tx_power_dbm"], serving["freq_ghz"],
+        _BANDWIDTH_HZ, tx_gain_db=serving["tx_gain_db"],
+        azimuth_deg=serving.get("azimuth_deg"),
+        sector_width_deg=serving.get("sector_width_deg", 120),
+    )
     return {
-        "rsrp_dbm": round(rsrp_from(serving, pos), 1),
-        "sinr_dl_db": round(
-            rf.sinr_db(serving["tx_power_dbm"], d, serving["freq_ghz"], _BANDWIDTH_HZ, serving["tx_gain_db"]),
-            1,
-        ),
+        "rsrp_dbm": snap["rsrp_dl_dbm"],
+        "sinr_dl_db": snap["sinr_dl_db"],
     }
 
 
@@ -185,7 +206,15 @@ def clear_ue_geo(uid):
 def build_geo():
     """Snapshot of RU sites and UE positions for the dashboard map."""
     now = time.time()
-    cells = [{"name": r["name"], "x": r["x"], "y": r["y"]} for r in RUS]
+    cells = [{
+        "name": r["name"],
+        "site": r.get("site"),
+        "x": r["x"],
+        "y": r["y"],
+        "azimuth_deg": r.get("azimuth_deg"),
+        "sector_width_deg": r.get("sector_width_deg", 120),
+    } for r in RUS]
+    sites = list(SITES.values())
     with _geo_lock:
         items = list(_ue_geo.values())
     ues = []
@@ -215,6 +244,8 @@ def build_geo():
             anomalies.append({"id": e["id"], "flags": flags, "x": e["x"], "y": e["y"], "cell": e.get("cell")})
     return {
         "ts": now,
+        "sites": sites,
+        "tower": sites[0] if sites else {"x": 0, "y": 0},  # back-compat (first site)
         "bounds": {
             "max_radius_m": MAX_RADIUS_M,
             "start_radius_m": START_RADIUS_M,
@@ -484,15 +515,27 @@ def vlog(uid, msg):
         print(f"[{uid} {time.strftime('%H:%M:%S')}] {msg}", flush=True)
 
 
+def _spawn_center():
+    """Pick a random RU site to spawn near, so UEs are spread evenly across the
+    cluster (each site gets ~1/N of UEs) rather than clustered at the origin."""
+    if SITES:
+        s = random.choice(list(SITES.values()))
+        return float(s["x"]), float(s["y"])
+    return 0.0, 0.0
+
+
 class Walk:
-    """Bounded 2-D random walk around the cluster origin (0,0). With RUs placed
-    on either side of the origin, crossing the midline is what triggers handovers."""
+    """Bounded 2-D random walk. UEs spawn around a randomly chosen RU site with a
+    uniform bearing (so a site's three 120° sectors each get ~1/3 of its UEs) and an
+    area-uniform radius — this keeps per-cell load even instead of overloading the
+    sector that faces the origin. Roaming across sector / site edges triggers handovers."""
 
     def __init__(self, speed):
+        cx, cy = _spawn_center()
         ang = random.uniform(0, 2 * math.pi)
-        r = random.uniform(50, START_RADIUS_M)
-        self.x = r * math.cos(ang)
-        self.y = r * math.sin(ang)
+        r = START_RADIUS_M * math.sqrt(random.random())   # area-uniform around the site
+        self.x = cx + r * math.cos(ang)
+        self.y = cy + r * math.sin(ang)
         self.heading = random.uniform(0, 2 * math.pi)
         self.speed = speed
 

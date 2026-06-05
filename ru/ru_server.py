@@ -17,10 +17,12 @@ that to the DU. What changed for scale:
 """
 import asyncio
 import itertools
-import math
+import json
 import os
 import sys
+import threading
 import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 for _p in (_HERE, os.path.dirname(_HERE)):
@@ -30,7 +32,8 @@ for _p in (_HERE, os.path.dirname(_HERE)):
 
 from common import protocol as P
 from common import rf_model as rf
-from common.signaling import get_catalog
+from common.ru_dictionary import RuDictionary, parse_sectors_env
+from common.signaling import get_catalog, twin
 from common.signaling import procedures as proc
 
 CATALOG = get_catalog()
@@ -39,32 +42,55 @@ TCP_PORT = int(os.environ.get("RU_TCP_PORT", "38470"))
 DU_HOST = os.environ.get("DU_HOST", "127.0.0.1")
 DU_PORT = int(os.environ.get("DU_PORT", "38472"))
 CELL_ID = os.environ.get("CELL_ID", "cell-1")
+SITE_ID = os.environ.get("SITE_ID", CELL_ID)
 TX_POWER_DBM = float(os.environ.get("TX_POWER_DBM", "49"))
 TX_GAIN_DB = float(os.environ.get("TX_GAIN_DB", "15"))
 FREQ_GHZ = float(os.environ.get("FREQ_GHZ", "3.5"))
 BANDWIDTH_MHZ = float(os.environ.get("BANDWIDTH_MHZ", "100"))
+CELL_TOTAL_PRBS = int(os.environ.get("CELL_TOTAL_PRBS", os.environ.get("TOTAL_PRBS", "250")))
 RU_X = float(os.environ.get("RU_X", "0"))
 RU_Y = float(os.environ.get("RU_Y", "0"))
+SECTOR_WIDTH_DEG = float(os.environ.get("SECTOR_WIDTH_DEG", "120"))
+RU_STATE_PATH = os.environ.get(
+    "RU_STATE_PATH",
+    f"/trace/data/ru_state/{SITE_ID}.json",
+)
+RU_STATE_FLUSH_SEC = float(os.environ.get("RU_STATE_FLUSH_SEC", "1"))
+RU_HTTP_PORT = int(os.environ.get("RU_HTTP_PORT", "8082"))
 _BW_HZ = BANDWIDTH_MHZ * 1e6
-_CELL_NUM = CATALOG.cell_num(CELL_ID)  # cosmetic numeric cell id for the realistic envelope
+
+SECTOR_CFG = parse_sectors_env(
+    bandwidth_mhz=BANDWIDTH_MHZ,
+    default_freq_ghz=FREQ_GHZ,
+    total_prbs=CELL_TOTAL_PRBS,
+)
+SECTORS = {c: cfg["azimuth_deg"] for c, cfg in SECTOR_CFG.items()}
+_CELL_NUM = {c: CATALOG.cell_num(c) for c in SECTOR_CFG}
+
+RU_DICT = RuDictionary.from_env()
+_dict_json = b"{}"
 
 
 def log(msg):
-    print(f"[RU {CELL_ID} {time.strftime('%H:%M:%S')}] {msg}", flush=True)
+    print(f"[RU {SITE_ID} {time.strftime('%H:%M:%S')}] {msg}", flush=True)
 
 
-def compute_rf(ue_pos, ue_tx_power_dbm):
-    dx = ue_pos["x"] - RU_X
-    dy = ue_pos["y"] - RU_Y
-    distance = max(1.0, math.hypot(dx, dy))
-    return {
-        "distance_m": round(distance, 1),
-        "rsrp_dl_dbm": round(rf.rsrp_dbm(TX_POWER_DBM, distance, FREQ_GHZ, TX_GAIN_DB), 1),
-        "sinr_dl_db": round(rf.sinr_db(TX_POWER_DBM, distance, FREQ_GHZ, _BW_HZ,
-                                       tx_gain_db=TX_GAIN_DB), 1),
-        "sinr_ul_db": round(rf.sinr_db(ue_tx_power_dbm, distance, FREQ_GHZ, _BW_HZ,
-                                       tx_gain_db=0.0, rx_gain_db=TX_GAIN_DB), 1),
-    }
+def compute_rf(ue_pos, cell_id, ue_tx_power_dbm):
+    """RF snapshot for the sector identified by `cell_id` on this site."""
+    cfg = SECTOR_CFG.get(cell_id, {})
+    freq = cfg.get("freq_ghz", FREQ_GHZ)
+    bw_hz = float(cfg.get("bandwidth_mhz", BANDWIDTH_MHZ)) * 1e6
+    return rf.link_rf(
+        ue_pos, RU_X, RU_Y, TX_POWER_DBM, freq, bw_hz,
+        tx_gain_db=TX_GAIN_DB, ue_tx_power_dbm=ue_tx_power_dbm,
+        azimuth_deg=SECTORS.get(cell_id), sector_width_deg=SECTOR_WIDTH_DEG,
+    )
+
+
+def best_sector(ue_pos):
+    """Strongest of this site's sectors for a position (fallback when the UE's chosen
+    cell isn't one of ours)."""
+    return max(SECTORS, key=lambda c: compute_rf(ue_pos, c, 23.0)["rsrp_dl_dbm"])
 
 
 class F1Link:
@@ -154,36 +180,94 @@ class F1Link:
 F1 = F1Link()
 
 
+def _refresh_dict_snapshot():
+    global _dict_json
+    _dict_json = json.dumps(RU_DICT.to_dict(), indent=2).encode()
+
+
+def _flush_dict_file():
+    try:
+        RU_DICT.save(RU_STATE_PATH)
+    except OSError as exc:
+        log(f"ru_state write failed: {exc}")
+
+
+async def dict_publisher():
+    """Periodically mirror the in-memory dictionary to disk."""
+    while True:
+        await asyncio.sleep(RU_STATE_FLUSH_SEC)
+        _refresh_dict_snapshot()
+        _flush_dict_file()
+
+
+def start_http():
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *_):
+            pass
+
+        def do_GET(self):
+            if self.path.startswith("/dictionary"):
+                body = _dict_json
+                ctype = "application/json"
+            else:
+                body = (
+                    f"RU site {SITE_ID}\n"
+                    f"dictionary GET /dictionary\n"
+                    f"state file {RU_STATE_PATH}\n"
+                ).encode()
+                ctype = "text/plain"
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    srv = ThreadingHTTPServer(("0.0.0.0", RU_HTTP_PORT), Handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+
+
 async def serve_ue(reader, writer):
     """One Uu socket per UE. The RU is the radio: it stamps the serving cell and the
     RF it computes from the UE's geometry into the message's `_twin` sidecar, then
     transparently proxies the realistic signalling to the DU over the multiplexed F1
     link and relays the reply back."""
     ue_id = None
+    cell = next(iter(SECTORS))                           # default until the UE tells us
     released = False
     try:
         while True:
             msg = await P.async_recv_msg(reader)        # uplink from UE
             tw = msg.get("_twin") or {}
             ue_id = tw.get("ue_id", ue_id)
-            msg["cell_id"] = _CELL_NUM                  # cosmetic (realistic envelope)
-            tw["cell"] = CELL_ID                         # functional: the serving cell
             pos = tw.get("position")
+            # The UE picks which of this site's sectors it is on; trust it, but fall
+            # back to the strongest sector for the UE's position if it's not ours.
+            chosen = tw.get("cell")
+            if chosen in SECTORS:
+                cell = chosen
+            elif pos is not None:
+                cell = best_sector(pos)
+            tw["cell"] = cell                            # functional: the serving cell
+            msg["cell_id"] = _CELL_NUM.get(cell, 0)      # cosmetic (realistic envelope)
             if pos is not None:
-                tw["rf"] = compute_rf(pos, tw.get("tx_power_dbm", 23.0))
+                tw["rf"] = compute_rf(pos, cell, tw.get("tx_power_dbm", 23.0))
             msg["_twin"] = tw
+            RU_DICT.note_uplink(ue_id, cell, tw)
             reply = await F1.request(msg)               # multiplexed to DU
+            RU_DICT.note_downlink(ue_id, cell, twin(reply))
             await P.async_send_msg(writer, reply)       # downlink to UE
             if CATALOG.is_final_uplink(msg):            # UE completed its release
+                RU_DICT.remove_ue(ue_id)
                 released = True
                 break
     except (asyncio.IncompleteReadError, ConnectionError, OSError):
         pass
     finally:
         if ue_id and not released:                      # UE vanished -> free PRBs
+            RU_DICT.remove_ue(ue_id)
             try:
                 await F1.request(CATALOG.build(proc.S1_UE_CONTEXT_RELEASE_REQUEST,
-                                               ue_id=ue_id, cell=CELL_ID,
+                                               ue_id=ue_id, cell=cell,
                                                step=proc.STEP_RELEASE_REQUEST))
             except (ConnectionError, OSError):
                 pass
@@ -195,9 +279,18 @@ async def serve_ue(reader, writer):
 
 async def main():
     await F1.connect()
+    _refresh_dict_snapshot()
+    _flush_dict_file()
+    start_http()
+    asyncio.create_task(dict_publisher())
     server = await asyncio.start_server(serve_ue, "0.0.0.0", TCP_PORT, backlog=1024)
-    log(f"up: {FREQ_GHZ} GHz, {BANDWIDTH_MHZ} MHz, TX {TX_POWER_DBM} dBm "
-        f"(+{TX_GAIN_DB} dBi) at ({RU_X},{RU_Y})")
+    sectors = ", ".join(
+        f"{c}@{('omni' if SECTORS[c] is None else f'{SECTORS[c]:.0f}°')}" for c in SECTORS
+    )
+    log(f"site {SITE_ID} ({RU_DICT.ru_type}) at ({RU_X},{RU_Y}): "
+        f"{FREQ_GHZ} GHz / {BANDWIDTH_MHZ} MHz, {RU_DICT.num_cells} cells @ "
+        f"{CELL_TOTAL_PRBS} PRB/cell | sectors: {sectors}")
+    log(f"ru_state -> {RU_STATE_PATH}  dictionary http://0.0.0.0:{RU_HTTP_PORT}/dictionary")
     log(f"listening on :{TCP_PORT} (Uu), backhaul F1 -> {DU_HOST}:{DU_PORT}")
     async with server:
         await server.serve_forever()

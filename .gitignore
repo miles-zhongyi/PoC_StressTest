@@ -10,6 +10,10 @@ venv/
 data/trace_index.jsonl
 data/ue_target.json
 
+# Live RU state dictionaries (written by ru/ru2/ru3 at runtime)
+data/ru_state/*.json
+!data/ru_state/.gitkeep
+
 # Generated signalling message templates (build with scripts/build_message_templates.py;
 # derived from the proprietary traces — the catalog ships built-in defaults without it)
 data/lte_templates.json

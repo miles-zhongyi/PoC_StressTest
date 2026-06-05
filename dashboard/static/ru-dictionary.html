@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RU state dictionaries — live</title>
+  <style>
+    :root {
+      --bg: #0c0f14;
+      --card: #151a22;
+      --border: #2a3140;
+      --text: #e8eaed;
+      --muted: #8b93a7;
+      --accent: #4d9fff;
+      --ok: #3dd68c;
+      --warn: #e5a84b;
+      --err: #f07178;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.45;
+      padding: 1.25rem 1.5rem 2rem;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin-bottom: 1.25rem;
+    }
+    h1 { font-size: 1.15rem; font-weight: 600; }
+    .sub { font-size: 0.8rem; color: var(--muted); margin-top: 0.25rem; }
+    .nav { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+    .btn {
+      display: inline-block;
+      padding: 0.45rem 0.85rem;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: #0a0d11;
+      color: var(--text);
+      font-size: 0.8rem;
+      text-decoration: none;
+    }
+    .btn:hover { border-color: var(--accent); color: var(--accent); }
+    .live { font-size: 0.75rem; color: var(--muted); display: flex; align-items: center; gap: 0.4rem; }
+    .live .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+    .live.ok .dot { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
+    .live.warn .dot { background: var(--warn); }
+    .banner {
+      display: none;
+      background: rgba(240, 113, 120, 0.12);
+      border: 1px solid rgba(240, 113, 120, 0.35);
+      border-radius: 8px;
+      padding: 0.65rem 0.9rem;
+      font-size: 0.8rem;
+      margin-bottom: 1rem;
+      color: var(--err);
+    }
+    .banner.show { display: block; }
+    .tabs {
+      display: flex;
+      gap: 0.35rem;
+      flex-wrap: wrap;
+      margin-bottom: 1rem;
+    }
+    .tab {
+      padding: 0.45rem 0.9rem;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--muted);
+      font-size: 0.82rem;
+      cursor: pointer;
+    }
+    .tab.active {
+      border-color: var(--accent);
+      color: var(--text);
+      background: rgba(77, 159, 255, 0.12);
+    }
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem 1.1rem;
+      margin-bottom: 1rem;
+    }
+    .panel h2 {
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--muted);
+      margin-bottom: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 0.65rem;
+    }
+    .kpi {
+      background: #0a0d11;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.65rem 0.75rem;
+    }
+    .kpi .label { font-size: 0.68rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+    .kpi .val { font-size: 1.05rem; font-weight: 600; margin-top: 0.2rem; font-variant-numeric: tabular-nums; }
+    .kpi .hint { font-size: 0.68rem; color: var(--muted); margin-top: 0.15rem; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.78rem;
+    }
+    th, td {
+      text-align: left;
+      padding: 0.45rem 0.55rem;
+      border-bottom: 1px solid var(--border);
+      font-variant-numeric: tabular-nums;
+    }
+    th { color: var(--muted); font-weight: 600; font-size: 0.68rem; text-transform: uppercase; }
+    tr:last-child td { border-bottom: none; }
+    .bar-wrap {
+      height: 6px;
+      background: #0a0d11;
+      border-radius: 3px;
+      overflow: hidden;
+      min-width: 60px;
+    }
+    .bar { height: 100%; background: var(--accent); border-radius: 3px; }
+    .bar.warn { background: var(--warn); }
+    .bar.err { background: var(--err); }
+    .tag {
+      display: inline-block;
+      padding: 0.1rem 0.4rem;
+      border-radius: 4px;
+      font-size: 0.68rem;
+      background: rgba(77, 159, 255, 0.15);
+      color: var(--accent);
+    }
+    .tag.file { background: rgba(229, 168, 75, 0.15); color: var(--warn); }
+    .empty { color: var(--muted); font-size: 0.8rem; padding: 0.5rem 0; }
+    details summary {
+      cursor: pointer;
+      font-size: 0.78rem;
+      color: var(--accent);
+      margin-top: 0.5rem;
+    }
+    pre {
+      margin-top: 0.5rem;
+      padding: 0.75rem;
+      background: #0a0d11;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 0.72rem;
+      overflow: auto;
+      max-height: 420px;
+    }
+    .ue-filter {
+      width: 100%;
+      max-width: 280px;
+      padding: 0.45rem 0.55rem;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: #0a0d11;
+      color: var(--text);
+      font-size: 0.8rem;
+      margin-bottom: 0.65rem;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>RU state dictionaries</h1>
+      <p class="sub">Per-site bandwidth, cell PRB pools, RU type, and per-UE frequency band assignments</p>
+    </div>
+    <div class="nav">
+      <a class="btn" href="/">← Dashboard</a>
+      <a class="btn" href="/messages.html">Trace catalog</a>
+      <div class="live" id="liveStatus"><span class="dot"></span><span id="liveText">Loading…</span></div>
+    </div>
+  </header>
+
+  <div class="banner" id="errorBanner"></div>
+
+  <div class="tabs" id="siteTabs"></div>
+
+  <section class="panel" id="sitePanel" style="display:none">
+    <h2>Site summary</h2>
+    <div class="kpi-grid" id="kpiGrid"></div>
+    <p class="sub" style="margin-top:0.65rem" id="siteMeta"></p>
+  </section>
+
+  <section class="panel" id="cellsPanel" style="display:none">
+    <h2>Sector cells — PRB pools</h2>
+    <div style="overflow-x:auto">
+      <table>
+        <thead>
+          <tr>
+            <th>Cell</th>
+            <th>Azimuth</th>
+            <th>Band</th>
+            <th>BW (MHz)</th>
+            <th>PRB used / total</th>
+            <th>Util</th>
+            <th>UEs</th>
+          </tr>
+        </thead>
+        <tbody id="cellsBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel" id="uesPanel" style="display:none">
+    <h2>Connected UEs — frequency assignment</h2>
+    <input type="search" class="ue-filter" id="ueFilter" placeholder="Filter by UE id or cell…" />
+    <div style="overflow-x:auto">
+      <table>
+        <thead>
+          <tr>
+            <th>UE</th>
+            <th>Cell</th>
+            <th>Freq (GHz)</th>
+            <th>Band</th>
+            <th>PRBs</th>
+            <th>MCS</th>
+            <th>RSRP</th>
+            <th>SINR</th>
+          </tr>
+        </thead>
+        <tbody id="uesBody"></tbody>
+      </table>
+    </div>
+    <p class="empty" id="uesEmpty" style="display:none">No UEs on this site right now.</p>
+  </section>
+
+  <section class="panel" id="jsonPanel" style="display:none">
+    <h2>Raw dictionary JSON</h2>
+    <details>
+      <summary>Show full document</summary>
+      <pre id="rawJson"></pre>
+    </details>
+  </section>
+
+  <script>
+    let sites = [];
+    let activeSite = null;
+    let ueFilter = "";
+
+    function esc(s) {
+      return String(s ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function fmtTs(ts) {
+      if (!ts) return "—";
+      return new Date(ts * 1000).toLocaleTimeString();
+    }
+
+    function prbBar(used, total) {
+      const pct = total ? Math.min(100, (used / total) * 100) : 0;
+      const cls = pct > 90 ? "err" : pct > 70 ? "warn" : "";
+      return `<div class="bar-wrap"><div class="bar ${cls}" style="width:${pct.toFixed(1)}%"></div></div>`;
+    }
+
+    function renderTabs() {
+      const el = document.getElementById("siteTabs");
+      if (!sites.length) {
+        el.innerHTML = `<span class="empty">No RU dictionaries available</span>`;
+        return;
+      }
+      if (!activeSite || !sites.find((s) => s.site_id === activeSite)) {
+        activeSite = sites[0].site_id;
+      }
+      el.innerHTML = sites.map((s) => {
+        const ues = Object.keys(s.ues || {}).length;
+        const cls = s.site_id === activeSite ? "tab active" : "tab";
+        return `<button type="button" class="${cls}" data-site="${esc(s.site_id)}">${esc(s.site_id)}<span style="opacity:0.65"> · ${ues} UE</span></button>`;
+      }).join("");
+      el.querySelectorAll(".tab").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          activeSite = btn.dataset.site;
+          renderTabs();
+          renderSite(sites.find((s) => s.site_id === activeSite));
+        });
+      });
+    }
+
+    function renderSite(site) {
+      const show = !!site;
+      ["sitePanel", "cellsPanel", "uesPanel", "jsonPanel"].forEach((id) => {
+        document.getElementById(id).style.display = show ? "" : "none";
+      });
+      if (!site) return;
+
+      const cells = site.cells || {};
+      const ues = site.ues || {};
+      const cellList = Object.entries(cells);
+      const totalPrb = cellList.reduce((a, [, c]) => a + (c.total_prbs || 0), 0);
+      const usedPrb = cellList.reduce((a, [, c]) => a + (c.used_prbs || 0), 0);
+      const connected = cellList.reduce((a, [, c]) => a + (c.connected_ues || 0), 0);
+      const srcTag = site._source === "live"
+        ? `<span class="tag">live HTTP</span>`
+        : `<span class="tag file">file fallback</span>`;
+
+      document.getElementById("kpiGrid").innerHTML = [
+        ["RU type", site.ru_type, ""],
+        ["Bandwidth", `${site.bandwidth_mhz} MHz`, "site carrier"],
+        ["Cells", site.num_cells, "sector count"],
+        ["Default band", site.frequency_band, `${site.freq_ghz} GHz`],
+        ["Cluster PRBs", `${usedPrb} / ${totalPrb}`, "sum of cells"],
+        ["Connected UEs", connected, "on this site"],
+      ].map(([label, val, hint]) =>
+        `<div class="kpi"><div class="label">${esc(label)}</div><div class="val">${esc(val)}</div>${hint ? `<div class="hint">${esc(hint)}</div>` : ""}</div>`
+      ).join("");
+
+      document.getElementById("siteMeta").innerHTML =
+        `${srcTag} · updated ${fmtTs(site.updated_ts)} · position (${site.position?.x}, ${site.position?.y}) m`;
+
+      document.getElementById("cellsBody").innerHTML = cellList.map(([id, c]) => {
+        const used = c.used_prbs || 0;
+        const total = c.total_prbs || 0;
+        const pct = total ? ((used / total) * 100).toFixed(1) : "0";
+        return `<tr>
+          <td><b>${esc(id)}</b></td>
+          <td>${c.azimuth_deg != null ? esc(c.azimuth_deg) + "°" : "—"}</td>
+          <td>${esc(c.frequency_band || site.frequency_band)}</td>
+          <td>${esc(c.bandwidth_mhz ?? site.bandwidth_mhz)}</td>
+          <td>${used} / ${total}</td>
+          <td>${prbBar(used, total)} ${pct}%</td>
+          <td>${esc(c.connected_ues ?? 0)}</td>
+        </tr>`;
+      }).join("");
+
+      const q = ueFilter.trim().toLowerCase();
+      const ueRows = Object.values(ues)
+        .filter((u) => !q || (u.ue_id || "").toLowerCase().includes(q) || (u.cell || "").toLowerCase().includes(q))
+        .sort((a, b) => (a.cell || "").localeCompare(b.cell || "") || (a.ue_id || "").localeCompare(b.ue_id || ""));
+
+      document.getElementById("uesBody").innerHTML = ueRows.map((u) => `<tr>
+        <td><code>${esc(u.ue_id)}</code></td>
+        <td>${esc(u.cell)}</td>
+        <td>${u.frequency_ghz != null ? esc(Number(u.frequency_ghz).toFixed(3)) : "—"}</td>
+        <td>${esc(u.frequency_band)}</td>
+        <td>${u.allocated_prbs != null ? esc(u.allocated_prbs) : "—"}</td>
+        <td>${u.mcs != null ? esc(u.mcs) : "—"}</td>
+        <td>${u.rsrp_dbm != null ? esc(u.rsrp_dbm) + " dBm" : "—"}</td>
+        <td>${u.sinr_dl_db != null ? esc(u.sinr_dl_db) + " dB" : "—"}</td>
+      </tr>`).join("");
+
+      document.getElementById("uesEmpty").style.display = ueRows.length ? "none" : "block";
+      document.getElementById("rawJson").textContent = JSON.stringify(site, null, 2);
+    }
+
+    async function poll() {
+      const live = document.getElementById("liveStatus");
+      const liveText = document.getElementById("liveText");
+      const banner = document.getElementById("errorBanner");
+      try {
+        const r = await fetch("/api/ru-dictionary");
+        const data = await r.json();
+        sites = data.sites || [];
+        renderTabs();
+        renderSite(sites.find((s) => s.site_id === activeSite));
+        if (data.errors?.length) {
+          banner.textContent = data.errors.join(" · ");
+          banner.classList.add("show");
+          live.className = "live warn";
+        } else {
+          banner.classList.remove("show");
+          live.className = "live ok";
+        }
+        liveText.textContent = sites.length
+          ? `${sites.length} site(s) · ${fmtTs(data.ts)}`
+          : "No data";
+      } catch (e) {
+        live.className = "live warn";
+        liveText.textContent = "Offline";
+        banner.textContent = String(e);
+        banner.classList.add("show");
+      }
+    }
+
+    document.getElementById("ueFilter").addEventListener("input", (e) => {
+      ueFilter = e.target.value;
+      renderSite(sites.find((s) => s.site_id === activeSite));
+    });
+
+    poll();
+    setInterval(poll, 2000);
+  </script>
+</body>
+</html>

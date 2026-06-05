@@ -394,6 +394,7 @@
     </div>
     <div class="header-actions">
       <a class="btn-nav" href="/messages.html">Trace message catalog</a>
+      <a class="btn-nav" href="/ru-dictionary.html">RU dictionaries</a>
       <div class="live">
         <span class="dot" id="liveDot"></span>
         <span id="liveText">Connecting…</span>
@@ -435,7 +436,7 @@
     <div class="geo-head">
       <div>
         <h2>UE mobility map</h2>
-        <p class="sub" style="margin-top:0.25rem">eNB sites (3 × 120° sectors), walk boundary, live UE positions</p>
+        <p class="sub" style="margin-top:0.25rem">3 RU sites · 3 × 120° sector cells each (250 PRB/cell) · walk boundary · live UE positions</p>
       </div>
       <div class="geo-stats" id="geoStats">—</div>
     </div>
@@ -520,7 +521,8 @@
 
   <script>
     const MAX_POINTS = 120;
-    const CELL_COLORS = ["#4d9fff", "#c77dff", "#3dd68c", "#e5a84b", "#56c2d6", "#f07178"];
+    const CELL_COLORS = ["#4d9fff", "#c77dff", "#3dd68c", "#e5a84b", "#56c2d6", "#f07178",
+                         "#9d8cff", "#5ad1b0", "#e58fbf", "#7fb069", "#d98c5f", "#6fa8dc"];
     const FREE_COLOR = "#2a3140";
     const cellColor = (i) => CELL_COLORS[i % CELL_COLORS.length];
 
@@ -566,10 +568,10 @@
       const same = cellIds.length === tsCellIds.length && cellIds.every((c, i) => c === tsCellIds[i]);
       if (same) return;
       tsCellIds = cellIds.slice();
-      const cellDatasets = cellIds.map((id, i) => ({
+      const cellDatasets = cellIds.map((id) => ({
         label: `${id} PRB %`,
         data: (history.byCell[id] || []).slice(),
-        borderColor: cellColor(i),
+        borderColor: cellColorForName(id),
         backgroundColor: "transparent",
         tension: 0.25,
         yAxisID: "y",
@@ -660,14 +662,15 @@
     }
 
     function renderPrbBars(cells) {
-      document.getElementById("prbBars").innerHTML = cells.map((c, i) => {
+      document.getElementById("prbBars").innerHTML = cells.map((c) => {
         const pct = c.utilization * 100;
         const cls = pct >= 99 ? "full" : pct >= 80 ? "high" : "";
-        const bg = cls ? "" : `background:${cellColor(i)};`;
+        const col = cellColorForName(c.cell_id);
+        const bg = cls ? "" : `background:${col};`;
         return `
           <div class="cell-row">
             <div class="cell-row-head">
-              <span class="name"><span class="swatch" style="background:${cellColor(i)}"></span>${c.cell_id}</span>
+              <span class="name"><span class="swatch" style="background:${col}"></span>${c.cell_id}</span>
               <span class="meta">${c.used_prbs}/${c.total_prbs} PRB · ${pct.toFixed(1)}% · ${c.connected_ues} UEs</span>
             </div>
             <div class="prb-track"><div class="prb-used ${cls}" style="width:${pct}%;${bg}"></div></div>
@@ -861,7 +864,7 @@
         liveText.textContent = `Live · ${fmtTime(payload.ts)}`;
       }
 
-      const cells = du.cells;
+      const cells = du.cells.slice().sort((a, b) => (a.cell_id < b.cell_id ? -1 : a.cell_id > b.cell_id ? 1 : 0));
       const agg = aggregate(cells, du);
 
       syncControlFromMetrics(ue);
@@ -879,7 +882,7 @@
 
       prbDonut.data.labels = [...cells.map((c) => `${c.cell_id} used`), "Free"];
       prbDonut.data.datasets[0].data = [...cells.map((c) => c.used_prbs), agg.free_prbs];
-      prbDonut.data.datasets[0].backgroundColor = [...cells.map((_, i) => cellColor(i)), FREE_COLOR];
+      prbDonut.data.datasets[0].backgroundColor = [...cells.map((c) => cellColorForName(c.cell_id)), FREE_COLOR];
       prbDonut.update("none");
 
       duBar.data.datasets[0].data = [agg.admitted, agg.rejected, agg.released];
@@ -948,16 +951,25 @@
       ctx.restore();
     }
 
-    function cellColorForName(name, cells) {
-      const i = (cells || []).findIndex((c) => c.name === name);
-      return cellColor(i >= 0 ? i : 0);
+    // Stable, distinct colour per cell id — consistent across the map, PRB bars,
+    // donut and legend (keyed by the cell's fixed position in the geo cell list, or a
+    // hash fallback before geo loads). 9 cells, ≥12 palette colours -> no collisions.
+    function cellColorForName(name) {
+      const cells = (lastGeo && lastGeo.cells) || [];
+      let i = cells.findIndex((c) => c.name === name);
+      if (i < 0) {
+        let h = 0; const s = String(name || "");
+        for (let k = 0; k < s.length; k++) h = (h * 31 + s.charCodeAt(k)) >>> 0;
+        i = h % CELL_COLORS.length;
+      }
+      return cellColor(i);
     }
 
     function resizeGeoCanvas() {
       const box = document.getElementById("geoCanvasBox");
       const dpr = window.devicePixelRatio || 1;
       const w = box.clientWidth;
-      const h = 380;
+      const h = Math.min(w, 560);
       geoCanvas.width = Math.floor(w * dpr);
       geoCanvas.height = Math.floor(h * dpr);
       geoCanvas.style.height = h + "px";
@@ -993,56 +1005,80 @@
       });
     }
 
-    /** Draw macro eNB: 3 sectors × 120° (0°, 120°, 240° azimuth from north). */
-    function drawEnbSite(ctx, sx, sy, scale, col, label) {
-      const AZIMUTHS = [0, 120, 240];
-      const SPAN = 120;
-      const covR = Math.max(55, 220 * scale);
-      const antR = Math.max(18, 28 * scale);
+    /** Draw one 120° sector wedge (azimuth = boresight from north). */
+    function sectorPath(ctx, cx, cy, azimuthDeg, spanDeg, radius) {
+      const half = spanDeg / 2;
+      const start = ((azimuthDeg - half) - 90) * Math.PI / 180;
+      const end = ((azimuthDeg + half) - 90) * Math.PI / 180;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.arc(cx, cy, radius, start, end);
+      ctx.closePath();
+    }
 
-      function sectorPath(cx, cy, azimuthDeg, spanDeg, radius) {
-        const half = spanDeg / 2;
-        const start = ((azimuthDeg - half) - 90) * Math.PI / 180;
-        const end = ((azimuthDeg + half) - 90) * Math.PI / 180;
-        ctx.beginPath();
-        ctx.moveTo(cx, cy);
-        ctx.arc(cx, cy, radius, start, end);
-        ctx.closePath();
-      }
+    /** One macro RU site (tower): each of its cells is one coloured 120° sector fan. */
+    function drawSectorTower(ctx, site, cells, scale, covRadiusM, toScreen) {
+      const [sx, sy] = toScreen(site.x, site.y);
+      const covR = Math.max(80, covRadiusM * scale * 0.92);
+      const antR = Math.max(18, 26 * scale);
 
-      // coverage wedges (faint)
-      AZIMUTHS.forEach((az) => {
-        sectorPath(sx, sy, az, SPAN, covR);
-        ctx.fillStyle = col + "22";
+      (cells || []).forEach((cell, i) => {
+        const az = cell.azimuth_deg != null ? cell.azimuth_deg : i * 120;
+        const span = cell.sector_width_deg || 120;
+        const col = cellColorForName(cell.name);
+        sectorPath(ctx, sx, sy, az, span, covR);
+        ctx.fillStyle = col + "28";
         ctx.fill();
-        ctx.strokeStyle = col + "55";
-        ctx.lineWidth = 1;
+        ctx.strokeStyle = col + "66";
+        ctx.lineWidth = 1.25;
         ctx.stroke();
-      });
-
-      // antenna panels (solid sectors)
-      AZIMUTHS.forEach((az) => {
-        sectorPath(sx, sy, az, SPAN, antR);
-        ctx.fillStyle = col + "cc";
+        sectorPath(ctx, sx, sy, az, span, antR);
+        ctx.fillStyle = col + "dd";
         ctx.fill();
         ctx.strokeStyle = "#e8eaed";
         ctx.lineWidth = 1.5;
         ctx.stroke();
+        // sector label at mid-boresight
+        const mid = ((az - 90) * Math.PI) / 180;
+        const lx = sx + Math.cos(mid) * (antR + 14);
+        const ly = sy + Math.sin(mid) * (antR + 14);
+        ctx.fillStyle = col;
+        ctx.font = "600 10px Segoe UI, system-ui, sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(cell.name, lx, ly + 3);
       });
 
-      // mast
-      ctx.fillStyle = "#e8eaed";
-      ctx.beginPath();
-      ctx.arc(sx, sy, 4, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = col;
-      ctx.lineWidth = 2;
-      ctx.stroke();
+      // sector boundary lines (shared tower)
+      const boundaries = new Set();
+      (cells || []).forEach((cell) => {
+        const az = cell.azimuth_deg != null ? cell.azimuth_deg : 0;
+        const half = (cell.sector_width_deg || 120) / 2;
+        boundaries.add(az - half);
+        boundaries.add(az + half);
+      });
+      ctx.strokeStyle = "rgba(77,159,255,0.35)";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([5, 4]);
+      boundaries.forEach((deg) => {
+        const rad = ((deg - 90) * Math.PI) / 180;
+        ctx.beginPath();
+        ctx.moveTo(sx, sy);
+        ctx.lineTo(sx + Math.cos(rad) * covR, sy + Math.sin(rad) * covR);
+        ctx.stroke();
+      });
+      ctx.setLineDash([]);
 
       ctx.fillStyle = "#e8eaed";
-      ctx.font = "600 11px Segoe UI, system-ui, sans-serif";
+      ctx.beginPath();
+      ctx.arc(sx, sy, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#8b93a7";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.fillStyle = "#cbd2e0";
+      ctx.font = "700 11px Segoe UI, system-ui, sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText(label, sx, sy + antR + 16);
+      ctx.fillText(site.name || "site", sx, sy - antR - 8);
     }
 
     function drawGeoMap(geo, w, h) {
@@ -1071,48 +1107,30 @@
         ctx.stroke();
       }
 
-      // walk boundary + start ring
+      // walk boundary (UEs spawn per-site now, so no central start ring)
       const [bcx, bcy] = toScreen(0, 0);
       ctx.setLineDash([6, 5]);
       ctx.strokeStyle = "#3a4558";
       ctx.beginPath();
       ctx.arc(bcx, bcy, R * scale, 0, Math.PI * 2);
       ctx.stroke();
-      const rStart = geo.bounds?.start_radius_m || 300;
-      ctx.strokeStyle = "#2a3548";
-      ctx.beginPath();
-      ctx.arc(bcx, bcy, rStart * scale, 0, Math.PI * 2);
-      ctx.stroke();
       ctx.setLineDash([]);
 
-      // coverage hint (~1.3 km)
+      // handover sector boundaries drawn with tower wedges below
+
+      // RU sites (towers) + sector fans (under trails and UEs)
       const cov = geo.bounds?.coverage_hint_m || 1300;
-      ctx.strokeStyle = "rgba(240,113,120,0.25)";
-      ctx.beginPath();
-      ctx.arc(bcx, bcy, cov * scale, 0, Math.PI * 2);
-      ctx.stroke();
-
-      // handover midline (x = 0)
-      ctx.strokeStyle = "rgba(77,159,255,0.2)";
-      ctx.setLineDash([4, 6]);
-      ctx.beginPath();
-      ctx.moveTo(bcx, 8);
-      ctx.lineTo(bcx, h - 8);
-      ctx.stroke();
-      ctx.setLineDash([]);
-
-      // eNB macro sites (3 × 120° sectors) — under trails and UEs
-      (geo.cells || []).forEach((cell, i) => {
-        const [sx, sy] = toScreen(cell.x, cell.y);
-        drawEnbSite(ctx, sx, sy, scale, cellColor(i), cell.name);
-      });
+      const sites = geo.sites || (geo.tower ? [{ name: "site", ...geo.tower }] : [{ name: "site", x: 0, y: 0 }]);
+      const cellsBySite = {};
+      (geo.cells || []).forEach((c) => { (cellsBySite[c.site] ||= []).push(c); });
+      sites.forEach((s) => drawSectorTower(ctx, s, cellsBySite[s.name] || [], scale, cov, toScreen));
 
       // trails
       geoTrails.forEach((trail, id) => {
         if (trail.length < 2) return;
         const ue = (geo.ues || []).find((u) => u.id === id);
         const traced = tracedUeId && id === tracedUeId;
-        ctx.strokeStyle = traced ? TRACE_UE_FILL : cellColorForName(ue?.cell, geo.cells) + "55";
+        ctx.strokeStyle = traced ? TRACE_UE_FILL : cellColorForName(ue?.cell) + "55";
         ctx.lineWidth = traced ? 3.5 : 1.5;
         ctx.beginPath();
         trail.forEach((p, i) => {
@@ -1130,7 +1148,7 @@
           drawTraceMarker(ctx, sx, sy);
           return;
         }
-        const col = cellColorForName(u.cell, geo.cells);
+        const col = cellColorForName(u.cell);
         const flags = flagMap.get(u.id) || [];
         if (anomSet.has(u.id)) {
           ctx.strokeStyle = flags.includes("stale") ? "#f07178" : "#e5a84b";
@@ -1203,7 +1221,7 @@
       updateGeoTrails(geo.ues || []);
       const box = document.getElementById("geoCanvasBox");
       const w = box.clientWidth;
-      const h = 380;
+      const h = Math.min(w, 560);     // squarer + taller -> fills the panel, less waste
       drawGeoMap(geo, w, h);
 
       const c = geo.counts || {};
@@ -1220,15 +1238,27 @@
       }
       document.getElementById("geoStats").innerHTML = parts.join(" · ");
 
-      const legendHtml = (geo.cells || []).map((cell, i) =>
-        `<div class="row"><span class="dot" style="background:${cellColor(i)}"></span>`
-        + `3 × 120° = ${cell.name} @ (${cell.x}, ${cell.y}) m</div>`
-      ).join("")
+      const sites = geo.sites || [];
+      const cellsBySite = {};
+      (geo.cells || []).forEach((c) => { (cellsBySite[c.site] ||= []).push(c); });
+      const siteOrder = sites.length ? sites.map((s) => s.name) : Object.keys(cellsBySite);
+      const legendHtml = siteOrder.map((siteName) => {
+        const site = sites.find((s) => s.name === siteName);
+        const head = `<div class="row" style="margin-top:0.3rem;color:var(--text)"><b>${siteName}</b>`
+          + (site ? ` <span class="sub">@ (${Math.round(site.x)}, ${Math.round(site.y)})</span>` : "") + `</div>`;
+        const rows = (cellsBySite[siteName] || []).map((cell) => {
+          const az = cell.azimuth_deg != null ? `${cell.azimuth_deg}°` : "?";
+          const span = cell.sector_width_deg || 120;
+          return `<div class="row"><span class="dot" style="background:${cellColorForName(cell.name)}"></span>`
+            + `${cell.name}: ${span}° @ ${az}</div>`;
+        }).join("");
+        return head + rows;
+      }).join("")
         + `<div class="row" style="margin-top:0.35rem"><span class="star">★</span> Star = call-flow UE (see box above)</div>`
         + `<div class="row"><span class="dot" style="background:transparent;box-shadow:0 0 0 2px #e5a84b"></span> Orange ring = anomaly (frozen / edge)</div>`
         + `<div style="margin-top:0.4rem">Dashed ring: max walk (${geo.bounds?.max_radius_m} m)</div>`
-        + `<div>Red ring: ~coverage limit (${geo.bounds?.coverage_hint_m} m)</div>`
-        + `<div>HO margin: ${geo.ho_margin_db} dB</div>`;
+        + `<div>Sector fans: ~${geo.bounds?.coverage_hint_m} m reach</div>`
+        + `<div>HO margin: ${geo.ho_margin_db} dB (A3 at sector edges)</div>`;
       document.getElementById("geoLegend").innerHTML = legendHtml;
 
       const list = document.getElementById("geoAnomList");
